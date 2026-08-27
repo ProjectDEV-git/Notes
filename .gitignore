@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtualenv
+.venv/
+venv/
+
+# Recordings / transcripts must never be committed
+*.wav
+*.mp3
+*.m4a
+*.jsonl
+data/
+sessions/
+
+# Local scratch
+*.log
+.DS_Store
+
+# ...but test fixtures MUST be committed (small sample audio + reference transcript)
+!tests/fixtures/**

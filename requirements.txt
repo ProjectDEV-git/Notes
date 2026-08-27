@@ -1,0 +1,6 @@
+# Pinned to the versions already verified working on this machine.
+# NOTE: torch is deliberately NOT used. faster-whisper runs on ctranslate2.
+faster-whisper==1.2.1
+ctranslate2==4.8.0
+rich>=13.0
+pytest>=8.0
