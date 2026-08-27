@@ -67,8 +67,27 @@ VAD_MIN_SILENCE_MS = 500
 # Summarization (local Ollama)
 # --------------------------------------------------------------------------
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-SUMMARY_MODEL = "qwen3:8b"  # multilingual, ~5GB, fits in free RAM
-TEST_MODEL = "qwen3:0.6b"  # tiny model for fast offline tests
+
+# Model choice is the single biggest quality/speed lever, and this machine has
+# no GPU. Measured on the Intel Core 5 120U, summarizing one 3-minute window:
+#
+#   llama3.2:3b   45s, clean bullets first try, correct Thai      <- default
+#   qwen3:4b      >300s timeout; reasoning model, narrates instead
+#                 of answering and replies in English to Thai input
+#   qwen3:8b      1.6 tok/s, ~25 min for a 50-minute lecture
+#   qwen3:0.6b    fast but echoes the transcript instead of summarizing
+#
+# The qwen3 family is reasoning-first: with think=false it dumps its chain of
+# thought into `content`, so it cannot reliably honour an output format.
+# Prefer a non-reasoning instruct model here.
+# Override with --model or NOTETAKER_SUMMARY_MODEL.
+SUMMARY_MODEL = os.environ.get("NOTETAKER_SUMMARY_MODEL", "llama3.2:3b")
+TEST_MODEL = os.environ.get("NOTETAKER_TEST_MODEL", "llama3.2:3b")
+
+# Hard cap on generated tokens per call. Without it a model that starts
+# rambling runs until the request times out.
+MAP_MAX_TOKENS = 300
+REDUCE_MAX_TOKENS = 700
 
 MAP_WINDOW_SECONDS = 180  # group transcript into ~3 min windows for the MAP stage
 LIVE_NOTES_INTERVAL_SECONDS = 180  # how often live incremental notes refresh
