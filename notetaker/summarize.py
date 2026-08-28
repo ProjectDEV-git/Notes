@@ -135,6 +135,10 @@ def parse_bullets(text: str) -> list[str]:
             continue
         if _BULLET.match(line):
             cleaned = _BULLET.sub("", line).strip()
+            # Models sometimes emit "- - point"; strip any repeated marker so
+            # the rendered notes do not show a doubled bullet.
+            while _BULLET.match(cleaned):
+                cleaned = _BULLET.sub("", cleaned).strip()
             if cleaned:
                 bullets.append(cleaned)
     return bullets

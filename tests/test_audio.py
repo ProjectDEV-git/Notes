@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 import wave
+from pathlib import Path
 
 import pytest
 
@@ -189,6 +190,44 @@ def test_cleanup_removes_chunks_but_keeps_audio(tmp_path):
     rec.cleanup_chunks()
     assert not rec.chunks_dir.exists()
     assert rec.audio_path.exists()
+
+
+# ------------------------------------------------------------------ duration
+def test_duration_of_a_clean_wav():
+    fixture = Path("tests/fixtures/lecture_en_30s.wav")
+    if not fixture.exists():
+        pytest.skip("fixture missing")
+    assert audio.wav_duration(fixture) == pytest.approx(30.0, abs=0.1)
+
+
+def test_duration_ignores_placeholder_frame_count(tmp_path):
+    """Regression: a SIGINT-stopped recording has a bogus RIFF frame count.
+
+    ffmpeg cannot always seek back to patch the header, leaving INT32_MAX.
+    Trusting it reported a 65-second lecture as 37 hours.
+    """
+    path = tmp_path / "truncated.wav"
+    seconds, rate = 2, config.SAMPLE_RATE
+    with wave.open(str(path), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(rate)
+        wf.writeframes(b"\x00\x00" * rate * seconds)
+
+    # Corrupt the header the way an interrupted ffmpeg does.
+    raw = bytearray(path.read_bytes())
+    raw[40:44] = (2147483647).to_bytes(4, "little")  # data chunk size
+    path.write_bytes(raw)
+
+    assert audio.wav_duration(path) == pytest.approx(seconds, abs=0.1)
+
+
+@needs_audio
+def test_recorded_duration_is_realistic(tmp_path):
+    """End-to-end guard: a 6 second recording must not report hours."""
+    src = audio.resolve_source(config.SOURCE_MIC)
+    rec, _ = _record(src, tmp_path, seconds=6)
+    assert 3.0 < audio.wav_duration(rec.audio_path) < 30.0
 
 
 def test_bad_device_raises_clear_error(tmp_path):

@@ -31,6 +31,11 @@ class AudioError(RuntimeError):
     """Raised when capture cannot start or a device is unusable."""
 
 
+# Canonical PCM WAV header length, used to recover the true sample count when
+# ffmpeg leaves a placeholder frame count in the header.
+_WAV_HEADER_BYTES = 44
+
+
 @dataclass(frozen=True)
 class AudioSource:
     """A PulseAudio capture source."""
@@ -175,9 +180,24 @@ def resolve_source(selector: str | None) -> AudioSource:
 # Inspection helpers
 # --------------------------------------------------------------------------
 def wav_duration(path: Path) -> float:
-    """Duration in seconds of a PCM WAV file."""
+    """Duration in seconds of a PCM WAV file.
+
+    ffmpeg cannot always seek back to patch the RIFF header when it is stopped
+    mid-write, leaving a placeholder frame count (INT32_MAX). Trusting the
+    header then reports a 65-second recording as 37 hours, so the length is
+    derived from the real data size and only falls back to the header.
+    """
+    path = Path(path)
     with wave.open(str(path), "rb") as wf:
-        return wf.getnframes() / float(wf.getframerate())
+        rate = wf.getframerate() or config.SAMPLE_RATE
+        block = max(wf.getnchannels() * wf.getsampwidth(), 1)
+        header_frames = wf.getnframes()
+
+    actual_frames = max(path.stat().st_size - _WAV_HEADER_BYTES, 0) // block
+    if header_frames <= 0 or header_frames > actual_frames + 1:
+        # Header is a placeholder or otherwise inconsistent with the file.
+        return actual_frames / float(rate)
+    return header_frames / float(rate)
 
 
 def rms_level(path: Path) -> float:
