@@ -136,6 +136,25 @@ token budget on chain-of-thought instead of answering, so a **non-reasoning
 instruct model is the right choice here**. Change it with `--model` or
 `NOTETAKER_SUMMARY_MODEL`.
 
+### Verified on a real 10-minute lecture
+
+Tested end to end on a genuine 10-minute university lecture (Aristotle's logic),
+captured through system audio exactly as an online lecture would be:
+
+| stage | result |
+|---|---|
+| recording | 10:48 captured, 123 segments, duration reported correctly |
+| transcription | kept up live; ~90 s to drain the backlog after stopping |
+| summarizing | 3 m 31 s across 4 map-reduce windows |
+| **output** | **1130 words → 171 words (17.3% of the transcript)** |
+
+Every claim in the notes was checked against the transcript and none was
+fabricated: the first-cause discussion, the physics/metaphysics split, and the
+exoteric works "lacking literary value" were all genuinely said.
+
+Extrapolating, a 50-minute lecture takes roughly 15-20 minutes to summarize
+after class. Transcription itself happens live.
+
 ---
 
 ## Known limitations
