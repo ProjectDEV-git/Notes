@@ -13,7 +13,10 @@ See docs/BUILD_PLAN.md phase 8b.
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import signal
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -358,6 +361,125 @@ def cmd_export(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# lang
+# --------------------------------------------------------------------------
+# Whisper's own language codes. Transcription works for all of these; a
+# language pack only decides what language the NOTES are written in.
+WHISPER_LANGUAGES = {
+    "en": "English", "th": "Thai", "zh": "Chinese", "ja": "Japanese",
+    "ko": "Korean", "es": "Spanish", "fr": "French", "de": "German",
+    "it": "Italian", "pt": "Portuguese", "ru": "Russian", "ar": "Arabic",
+    "hi": "Hindi", "id": "Indonesian", "vi": "Vietnamese", "nl": "Dutch",
+    "pl": "Polish", "tr": "Turkish", "sv": "Swedish", "uk": "Ukrainian",
+    "he": "Hebrew", "fa": "Persian", "ms": "Malay", "ta": "Tamil",
+    "my": "Burmese", "km": "Khmer", "lo": "Lao", "bn": "Bengali",
+}
+
+# Scripts written without spaces between words. Grounding and dedupe use
+# character n-grams for these, as they already do for Thai.
+UNSPACED_SCRIPTS = {
+    "th": ["\u0e00", "\u0e7f"],
+    "zh": ["\u4e00", "\u9fff"],
+    "ja": ["\u3040", "\u30ff"],
+    "km": ["\u1780", "\u17ff"],
+    "lo": ["\u0e80", "\u0eff"],
+    "my": ["\u1000", "\u109f"],
+}
+
+
+def cmd_lang(args: argparse.Namespace) -> int:
+    from . import languages
+
+    if args.lang_command == "list":
+        installed = languages.load_all(refresh=True)
+        if HAVE_RICH:
+            table = Table(title="Note languages", header_style="bold")
+            table.add_column("code")
+            table.add_column("notes written in")
+            table.add_column("source")
+            for code in sorted(installed):
+                lang = installed[code]
+                custom = (languages.LANGUAGE_DIR / f"{code}.json").exists()
+                table.add_row(code, lang.name, "custom" if custom else "built-in")
+            console.print(table)
+            console.print(
+                "\n[dim]Add one with:  notetaker lang add <code>\n"
+                "Transcription already works for ~100 languages; a pack only decides\n"
+                "what language your NOTES are written in.[/dim]"
+            )
+        else:
+            for code in sorted(installed):
+                print(f"{code}\t{installed[code].name}")
+        return 0
+
+    if args.lang_command == "add":
+        code = args.code.lower()
+        if code not in WHISPER_LANGUAGES and not args.force:
+            close = ", ".join(sorted(WHISPER_LANGUAGES)[:12])
+            return fail(
+                f"{code!r} is not a Whisper language code, so speech could not be "
+                f"transcribed for it.\nKnown codes include: {close} ...\n"
+                "Use --force if you are sure."
+            )
+
+        path = languages.LANGUAGE_DIR / f"{code}.json"
+        if path.exists() and not args.force:
+            return fail(f"{path} already exists. Edit it, or pass --force to reset it.")
+
+        data = languages.template(code, args.name or WHISPER_LANGUAGES.get(code, code))
+        if code in UNSPACED_SCRIPTS:
+            data["script_range"] = UNSPACED_SCRIPTS[code]
+
+        path = languages.save(code, data)
+        echo(f"[green]created[/green] {path}")
+        echo()
+        echo("The prompts are in English so the file works immediately.")
+        echo("Translate the two prompts into your language for the best results:")
+        echo(f"  [bold]{path}[/bold]")
+        echo()
+        echo("Keep [bold]{text}[/bold] in both prompts: that is where the transcript goes.")
+        echo(f"Then record with:  notetaker record --lang {code}")
+        return 0
+
+    if args.lang_command == "edit":
+        code = args.code.lower()
+        path = languages.LANGUAGE_DIR / f"{code}.json"
+        if not path.exists():
+            builtin = languages.BUILTIN.get(code)
+            if not builtin:
+                return fail(f"no language {code!r}. Create it with: notetaker lang add {code}")
+            # Copy the built-in out so it can be customised.
+            path = languages.save(code, builtin.to_dict())
+            echo(f"[dim]copied built-in {code} to {path} for editing[/dim]")
+
+        editor = os.environ.get("EDITOR", "nano")
+        subprocess.call([editor, str(path)])
+
+        try:
+            languages.load_all(refresh=True)
+            data = json.loads(path.read_text(encoding="utf-8"))
+            languages.Language.from_dict(code, data)
+            echo(f"[green]ok[/green] {code} loads correctly")
+        except (json.JSONDecodeError, ValueError) as exc:
+            return fail(f"{path} is not valid: {exc}")
+        return 0
+
+    if args.lang_command == "remove":
+        code = args.code.lower()
+        path = languages.LANGUAGE_DIR / f"{code}.json"
+        if not path.exists():
+            return fail(f"no custom language pack for {code!r}")
+        path.unlink()
+        languages.load_all(refresh=True)
+        echo(f"[green]removed[/green] {path}")
+        if code in languages.BUILTIN:
+            echo(f"[dim]the built-in {code} language is still available[/dim]")
+        return 0
+
+    return fail("unknown lang command")
+
+
+# --------------------------------------------------------------------------
 # argument parsing
 # --------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
@@ -380,8 +502,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="show key ideas while recording (extra CPU load)",
     )
     record.add_argument(
-        "--lang", default="auto", choices=["auto", "en", "th"],
-        help="lecture language. Default: autodetect",
+        "--lang", default="auto",
+        choices=["auto", *config.supported_languages()],
+        help="lecture language. Default: autodetect. Add more with 'notetaker lang add'",
     )
     record.add_argument("--model", default=config.ASR_MODEL, help="whisper model")
     record.add_argument("--summary-model", default=config.SUMMARY_MODEL, help="Ollama model")
@@ -411,6 +534,21 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--txt", action="store_true", help="export the raw transcript")
     export.add_argument("--output", "-o", default=None)
 
+    lang = subparsers.add_parser("lang", help="add or edit the languages notes are written in")
+    lang_sub = lang.add_subparsers(dest="lang_command", required=True)
+    lang_sub.add_parser("list", help="show installed note languages")
+
+    lang_add = lang_sub.add_parser("add", help="add a new note language")
+    lang_add.add_argument("code", help="language code, e.g. ja, zh, de")
+    lang_add.add_argument("--name", default=None, help="how to label it in the notes")
+    lang_add.add_argument("--force", action="store_true", help="overwrite an existing pack")
+
+    lang_edit = lang_sub.add_parser("edit", help="edit a language's prompts in $EDITOR")
+    lang_edit.add_argument("code")
+
+    lang_remove = lang_sub.add_parser("remove", help="delete a custom language pack")
+    lang_remove.add_argument("code")
+
     return parser
 
 
@@ -421,6 +559,7 @@ COMMANDS = {
     "show": cmd_show,
     "summarize": cmd_summarize,
     "export": cmd_export,
+    "lang": cmd_lang,
 }
 
 

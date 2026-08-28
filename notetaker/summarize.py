@@ -22,7 +22,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from . import config
+from . import config, languages
 from .asr import Segment, normalize
 
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
@@ -74,16 +74,10 @@ def strip_think(text: str) -> str:
     return _ORPHAN_THINK.sub("", _THINK_BLOCK.sub("", text)).strip()
 
 
-_NONE_MARKERS = {
-    "none", "n/a", "na", "nothing", "no terms", "none.", "(none)", "-", "—",
-    "ไม่มี", "ไม่มี.", "none identified", "not applicable",
-}
-
-
 def _is_empty_marker(line: str) -> bool:
     """True for placeholder text a model writes instead of omitting a section."""
     cleaned = _BULLET.sub("", line.strip()).strip().strip("*_`").lower()
-    return cleaned in _NONE_MARKERS
+    return cleaned in languages.none_markers()
 
 
 def strip_empty_sections(markdown: str) -> str:
@@ -159,14 +153,16 @@ def _content_words(text: str) -> set[str]:
     """Distinctive words of a line, for grounding checks.
 
     Short words are dropped because they are shared by almost any sentence.
-    Words are stemmed so paraphrase is not punished. Thai has no word spaces,
-    so character n-grams stand in for words there.
+    Words are stemmed so paraphrase is not punished. Scripts written without
+    word spaces (Thai, Japanese, Chinese...) fall back to character n-grams,
+    using the ranges declared by the installed language packs.
     """
     lowered = _PUNCT_KEEP.sub(" ", text.lower())
     words = {_stem(w) for w in lowered.split() if len(w) > 3}
-    thai = "".join(ch for ch in lowered if "\u0e00" <= ch <= "\u0e7f")
-    if thai:
-        words |= {thai[i:i + 4] for i in range(len(thai) - 3)}
+    for low, high in languages.unspaced_ranges():
+        script = "".join(ch for ch in lowered if low <= ch <= high)
+        if script:
+            words |= {script[i:i + 4] for i in range(len(script) - 3)}
     return words
 
 
@@ -418,9 +414,6 @@ def apply_grounding(markdown: str, sources: list[str]) -> str:
     return "\n".join(out)
 
 
-_ACTION_HEADINGS = ("action items", "สิ่งที่ต้องทำ")
-
-
 def drop_unbacked_actions(markdown: str, admin_points: list[str]) -> str:
     """Remove an Action items section when no ADMIN point was ever extracted.
 
@@ -431,13 +424,14 @@ def drop_unbacked_actions(markdown: str, admin_points: list[str]) -> str:
     if admin_points:
         return markdown
 
+    action_headings = languages.action_headings()
     out: list[str] = []
     skipping = False
     for line in markdown.splitlines():
         stripped = line.strip()
         if stripped.startswith("##"):
             heading = stripped.lstrip("#").strip().lower()
-            skipping = any(name in heading for name in _ACTION_HEADINGS)
+            skipping = any(name in heading for name in action_headings)
             if skipping:
                 continue
         if skipping:
@@ -500,17 +494,13 @@ def summarize_segments(
 
 def _fallback_body(key_points: list[str], admin_points: list[str], language: str) -> str:
     """Deterministic rendering used when the reduce stage adds no value."""
-    headings = {
-        "th": ("## แนวคิดสำคัญ", "## สิ่งที่ต้องทำ"),
-        "en": ("## Key ideas", "## Action items"),
-    }
-    key_heading, admin_heading = headings.get(language, headings["en"])
+    lang = languages.get(language)
 
-    parts = [key_heading]
+    parts = [lang.key_heading]
     parts.extend(f"- {p}" for p in key_points)
     if admin_points:
         parts.append("")
-        parts.append(admin_heading)
+        parts.append(lang.action_heading)
         parts.extend(f"- {p}" for p in admin_points)
     return "\n".join(parts)
 
@@ -520,7 +510,7 @@ def _render(title: str, body: str, language: str, duration: float | None, segmen
     if duration:
         minutes, seconds = divmod(int(duration), 60)
         meta.append(f"{minutes}m {seconds}s")
-    meta.append({"th": "ภาษาไทย", "en": "English"}.get(language, language))
+    meta.append(languages.get(language).name)
     meta.append(f"{segment_count} segments")
 
     return f"# {title}\n\n*{' · '.join(meta)}*\n\n{body.strip()}\n"

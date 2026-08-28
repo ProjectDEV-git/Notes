@@ -7,7 +7,12 @@ Works for both kinds of lecture:
 - **In person** — captures your microphone
 - **Online** (Zoom, Teams, YouTube) — captures your system audio
 
-Handles **English and Thai**, and a Thai lecture produces Thai notes.
+Handles **English and Thai** out of the box, and a Thai lecture produces Thai
+notes. [Adding another language](docs/LANGUAGES.md) takes about a minute:
+
+```bash
+notes lang add ja        # then: notes record --lang ja
+```
 
 Everything runs **offline on your machine**. No API keys, no subscription, and
 no audio ever leaves the laptop.
@@ -48,9 +53,26 @@ notetaker list                         # past recordings
 notetaker show <id> [--transcript]
 notetaker summarize <id> [--rerun] [--hq]
 notetaker export <id> [--md|--txt] [-o FILE]
+notetaker lang list|add|edit|remove    # languages your notes are written in
 ```
 
 </details>
+
+## Languages
+
+Transcription already works for ~100 languages with no setup, because that is
+Whisper. A **language pack** decides what language your *notes* are written in.
+
+```bash
+notes lang list          # what you have
+notes lang add ja        # add Japanese
+notes lang edit ja       # translate the prompts (recommended)
+```
+
+Packs are JSON files in `~/.config/notetaker/languages/`. You can also override
+the built-in English or Thai prompts to suit your subject. A malformed pack is
+skipped with a warning rather than crashing, so a typo cannot cost you a
+lecture. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
 
 ---
 

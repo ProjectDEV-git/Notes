@@ -57,6 +57,7 @@ notes            record this lecture now (microphone)
 notes online     record an online lecture (Zoom/Teams/YouTube)
 notes last       show the notes from your last lecture
 notes all        list every lecture
+notes lang       add or list note languages
 
 Press Ctrl-C to stop recording. Notes are written automatically.
 
@@ -64,6 +65,7 @@ Anything else is passed to the full CLI, for example:
   notes record --title "Physics week 4" --lang th
   notes summarize physics --hq
   notes export physics -o notes.md
+  notes lang add ja
 EOF
         ;;
     *)
