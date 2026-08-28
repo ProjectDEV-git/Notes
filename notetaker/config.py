@@ -89,6 +89,12 @@ TEST_MODEL = os.environ.get("NOTETAKER_TEST_MODEL", "llama3.2:3b")
 MAP_MAX_TOKENS = 300
 REDUCE_MAX_TOKENS = 700
 
+# Fraction of a bullet's distinctive words that must appear in the source text
+# for it to be kept. Small models will happily invent a whole lecture from a
+# single vague sentence, so every point must be traceable to what was said.
+# Lower = more permissive. 0.4 rejects invention while allowing paraphrase.
+GROUNDING_THRESHOLD = 0.4
+
 MAP_WINDOW_SECONDS = 180  # group transcript into ~3 min windows for the MAP stage
 LIVE_NOTES_INTERVAL_SECONDS = 180  # how often live incremental notes refresh
 OLLAMA_TIMEOUT = 300  # seconds; an 8B model on CPU is not fast
@@ -102,66 +108,85 @@ STRIP_THINK_BLOCKS = True
 PROMPTS: dict[str, dict[str, str]] = {
     "en": {
         "map": (
-            "You are taking notes on a university lecture.\n"
-            "Below is one segment of the transcript.\n\n"
-            "Extract only the 2-4 most important ideas from this segment.\n"
+            "You are a top student taking notes in a university lecture.\n"
+            "Below is part of the lecture transcript (speech-to-text, so it may "
+            "contain small errors).\n\n"
+            "Write the 2-4 most important points from this part.\n\n"
             "Rules:\n"
-            "- Output plain bullet points starting with '- '. No preamble, no headings.\n"
-            "- Each bullet must be a complete, self-contained idea.\n"
-            "- Ignore filler, greetings, tangents, and repetition.\n"
-            "- If the segment contains administrative info (deadlines, exam dates, "
-            "office hours), prefix that bullet with 'ADMIN: '.\n"
-            "- If the segment contains no substantive content, output nothing.\n\n"
-            "Transcript segment:\n{text}"
+            "- Output ONLY bullet lines starting with '- '. No preamble, no headings.\n"
+            "- Each bullet must make sense on its own, without the transcript.\n"
+            "- KEEP specifics: numbers, units, formulas, names, dates, definitions. "
+            "'15 kg lifted 1 m gives about 150 J' is useful; 'the lecturer discussed "
+            "energy' is not.\n"
+            "- Write what was TAUGHT, not what the lecturer did. Never start a bullet "
+            "with 'The lecturer', 'The speaker', or 'The professor'.\n"
+            "- Skip greetings, jokes, tangents, repetition, and technical difficulties.\n"
+            "- If a term is defined, write it as '**term** — definition'.\n"
+            "- Prefix deadlines, exam dates, homework, and office hours with 'ADMIN: '.\n"
+            "- If this part has no real content, output nothing at all.\n\n"
+            "Transcript:\n{text}"
         ),
         "reduce": (
-            "You are consolidating notes from a university lecture.\n"
-            "Below are key points extracted from consecutive segments of the lecture.\n\n"
-            "Produce the final notes in Markdown with exactly these sections:\n"
+            "Below are notes taken during one university lecture.\n"
+            "Tidy them into final revision notes. This is an EDITING task: you are "
+            "reorganising existing lines, not writing new ones.\n\n"
+            "Use ONLY these headings:\n"
             "## Key ideas\n"
             "## Terms & definitions\n"
             "## Action items\n\n"
             "Rules:\n"
-            "- 'Key ideas' must be tight bullets covering the substance of the lecture. "
-            "Merge duplicates and near-duplicates. Order them logically.\n"
-            "- 'Terms & definitions' lists any technical term that was defined, as "
-            "'**term** — definition'. Omit the section if there are none.\n"
-            "- 'Action items' collects everything marked ADMIN (deadlines, exams, "
-            "assignments). Omit the section if there are none.\n"
-            "- Be concise. This is a summary, not a retelling. No filler.\n\n"
-            "Extracted points:\n{text}"
+            "- Every bullet you output must come from the lines below. Copy their "
+            "wording, including all numbers, units and formulas, exactly.\n"
+            "- NEVER invent a point. If something is not in the lines below, it must "
+            "not appear. Adding 'review the slides' or similar is a serious error.\n"
+            "- Drop vague filler that says nothing specific, for example 'physics is "
+            "important' or 'this is a fundamental concept'.\n"
+            "- Where two lines say the same thing, keep the more specific one.\n"
+            "- Lines marked ADMIN go under 'Action items' with the ADMIN prefix removed.\n"
+            "- Lines shaped like '**term** — definition' go under 'Terms & definitions'.\n"
+            "- Everything else goes under 'Key ideas', ordered so the lecture flows.\n"
+            "- OMIT any heading with nothing to put under it. Never write 'None'.\n\n"
+            "Lines:\n{text}"
         ),
     },
     "th": {
         "map": (
-            "คุณกำลังจดโน้ตจากการบรรยายในมหาวิทยาลัย\n"
-            "ด้านล่างนี้คือบทถอดเสียงหนึ่งช่วง\n\n"
-            "สรุปเฉพาะแนวคิดสำคัญที่สุด 2-4 ข้อจากช่วงนี้\n"
+            "คุณเป็นนักศึกษาที่จดโน้ตเก่งที่สุดในห้องเรียนมหาวิทยาลัย\n"
+            "ด้านล่างคือบทถอดเสียงบางส่วนของการบรรยาย "
+            "(ถอดด้วยระบบอัตโนมัติ จึงอาจมีคำผิดบ้าง)\n\n"
+            "เขียนประเด็นสำคัญที่สุด 2-4 ข้อจากส่วนนี้\n\n"
             "กฎ:\n"
-            "- ตอบเป็นบูลเล็ตขึ้นต้นด้วย '- ' เท่านั้น ห้ามมีคำนำหรือหัวข้อ\n"
-            "- แต่ละข้อต้องเป็นใจความสมบูรณ์ในตัวเอง\n"
-            "- ข้ามคำพูดเยิ่นเย้อ การทักทาย เรื่องนอกประเด็น และการพูดซ้ำ\n"
-            "- ถ้าเป็นข้อมูลด้านธุรการ (กำหนดส่งงาน วันสอบ เวลาเข้าพบอาจารย์) "
+            "- ตอบเป็นบรรทัดบูลเล็ตขึ้นต้นด้วย '- ' เท่านั้น ห้ามมีคำนำหรือหัวข้อ\n"
+            "- แต่ละข้อต้องเข้าใจได้ด้วยตัวเอง โดยไม่ต้องอ่านบทถอดเสียง\n"
+            "- คงรายละเอียดสำคัญไว้: ตัวเลข หน่วย สูตร ชื่อ วันที่ และคำนิยาม\n"
+            "- เขียนสิ่งที่ 'สอน' ไม่ใช่สิ่งที่ผู้สอน 'ทำ' "
+            "ห้ามขึ้นต้นข้อด้วย 'ผู้สอน' หรือ 'อาจารย์'\n"
+            "- ข้ามคำทักทาย มุกตลก เรื่องนอกประเด็น และการพูดซ้ำ\n"
+            "- ถ้ามีการให้นิยามศัพท์ ให้เขียนว่า '**ศัพท์** — นิยาม'\n"
+            "- ถ้าเป็นกำหนดส่งงาน วันสอบ การบ้าน หรือเวลาเข้าพบอาจารย์ "
             "ให้ขึ้นต้นข้อนั้นด้วย 'ADMIN: '\n"
-            "- ถ้าช่วงนี้ไม่มีเนื้อหาสาระ ไม่ต้องตอบอะไรเลย\n\n"
+            "- ถ้าส่วนนี้ไม่มีเนื้อหาสาระ ไม่ต้องตอบอะไรเลย\n\n"
             "บทถอดเสียง:\n{text}"
         ),
         "reduce": (
-            "คุณกำลังรวบรวมโน้ตจากการบรรยายในมหาวิทยาลัย\n"
-            "ด้านล่างนี้คือประเด็นสำคัญที่สกัดมาจากแต่ละช่วงของการบรรยาย\n\n"
-            "จัดทำโน้ตฉบับสมบูรณ์เป็น Markdown โดยมีหัวข้อเหล่านี้:\n"
+            "ด้านล่างคือโน้ตที่จดไว้ระหว่างการบรรยายหนึ่งครั้ง\n"
+            "จัดระเบียบให้เป็นโน้ตสรุปฉบับสมบูรณ์ "
+            "งานนี้คือการ 'จัดเรียง' บรรทัดที่มีอยู่ ไม่ใช่การเขียนขึ้นใหม่\n\n"
+            "ใช้หัวข้อเหล่านี้เท่านั้น:\n"
             "## แนวคิดสำคัญ\n"
             "## คำศัพท์และนิยาม\n"
             "## สิ่งที่ต้องทำ\n\n"
             "กฎ:\n"
-            "- 'แนวคิดสำคัญ' ต้องกระชับ ครอบคลุมสาระของการบรรยาย "
-            "รวมข้อที่ซ้ำหรือใกล้เคียงกันเข้าด้วยกัน และเรียงลำดับให้สมเหตุสมผล\n"
-            "- 'คำศัพท์และนิยาม' ระบุศัพท์เทคนิคที่มีการให้นิยาม ในรูปแบบ "
-            "'**คำศัพท์** — นิยาม' ถ้าไม่มีให้ตัดหัวข้อนี้ออก\n"
-            "- 'สิ่งที่ต้องทำ' รวบรวมทุกข้อที่ทำเครื่องหมาย ADMIN ไว้ "
-            "ถ้าไม่มีให้ตัดหัวข้อนี้ออก\n"
-            "- ต้องกระชับ นี่คือบทสรุป ไม่ใช่การเล่าซ้ำ\n\n"
-            "ประเด็นที่สกัดได้:\n{text}"
+            "- ทุกข้อที่ตอบต้องมาจากบรรทัดด้านล่างเท่านั้น "
+            "คัดลอกข้อความเดิม รวมทั้งตัวเลข หน่วย และสูตร ให้ตรงตามเดิม\n"
+            "- ห้ามแต่งข้อใหม่เด็ดขาด ถ้าไม่มีอยู่ในบรรทัดด้านล่าง ห้ามใส่\n"
+            "- ตัดข้อความกว้างๆ ที่ไม่ได้บอกอะไรเจาะจงทิ้ง เช่น 'ฟิสิกส์สำคัญมาก'\n"
+            "- ถ้าสองบรรทัดมีใจความเดียวกัน ให้เก็บบรรทัดที่เจาะจงกว่า\n"
+            "- บรรทัดที่มี ADMIN ให้อยู่ใต้ 'สิ่งที่ต้องทำ' โดยตัดคำว่า ADMIN ออก\n"
+            "- บรรทัดรูปแบบ '**ศัพท์** — นิยาม' ให้อยู่ใต้ 'คำศัพท์และนิยาม'\n"
+            "- ที่เหลือให้อยู่ใต้ 'แนวคิดสำคัญ' เรียงให้เนื้อหาต่อเนื่อง\n"
+            "- หัวข้อใดไม่มีเนื้อหา ให้ตัดทิ้ง ห้ามเขียนว่า 'ไม่มี'\n\n"
+            "บรรทัด:\n{text}"
         ),
     },
 }

@@ -27,14 +27,26 @@ class PipelineState:
     elapsed: float = 0.0
     level: float = 0.0
     chunks_done: int = 0
+    chunks_pending: int = 0
     segments: list[Segment] = field(default_factory=list)
     live_points: list[str] = field(default_factory=list)
     language: str | None = None
     error: str | None = None
+    warning: str | None = None
 
     @property
     def recent_text(self) -> list[str]:
         return [s.text for s in self.segments[-6:]]
+
+    @property
+    def is_falling_behind(self) -> bool:
+        """True when ASR cannot keep up and a backlog is accumulating.
+
+        Chunks queue safely on disk, so nothing is lost, but the user should
+        know that stopping will not end the work immediately. This happens with
+        Thai, which runs several times slower than real time on CPU.
+        """
+        return self.chunks_pending >= 3
 
 
 class RecordingPipeline:
@@ -124,10 +136,23 @@ class RecordingPipeline:
             self._notify()
 
     def _tick_loop(self) -> None:
-        """Keeps the elapsed clock moving even between chunks."""
+        """Keeps the elapsed clock moving and tracks the ASR backlog."""
         while not self._stop.is_set():
+            try:
+                on_disk = len(list(self.recorder.chunks_dir.glob("chunk_*.wav")))
+            except Exception:
+                on_disk = 0
             with self._lock:
                 self.state.elapsed = self.recorder.elapsed
+                # The newest chunk is still being written, so it is not backlog.
+                self.state.chunks_pending = max(on_disk - self.state.chunks_done - 1, 0)
+                if self.state.is_falling_behind:
+                    self.state.warning = (
+                        f"transcription is {self.state.chunks_pending} chunks behind; "
+                        "it will finish after you stop"
+                    )
+                else:
+                    self.state.warning = None
             self._notify()
             time.sleep(0.5)
 

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# `notes` - one-word launcher for NoteTaker.
+#
+#   notes            start recording straight away (asks nothing)
+#   notes online     record an online lecture (Zoom/Teams/YouTube)
+#   notes last       show the notes from the most recent lecture
+#   notes all        list every lecture
+#   notes <anything else>  passed straight through to the full CLI
+#
+# Everything runs offline on this machine.
+
+set -euo pipefail
+
+APP_DIR="/home/gamingrf/Documents/Projects/NoteTaker"
+PY="$APP_DIR/.venv/bin/python"
+
+if [[ ! -x "$PY" ]]; then
+    echo "NoteTaker is not set up at $APP_DIR" >&2
+    exit 1
+fi
+
+run() { cd "$APP_DIR" && exec "$PY" -m notetaker.cli "$@"; }
+
+case "${1-}" in
+    # Bare `notes` starts recording from the microphone: the common case.
+    "")
+        run record --source mic --live-notes
+        ;;
+    online|zoom|teams|system)
+        shift
+        run record --source system --live-notes "$@"
+        ;;
+    mic|class|lecture)
+        shift
+        run record --source mic --live-notes "$@"
+        ;;
+    last)
+        cd "$APP_DIR"
+        latest="$("$PY" - <<'PY'
+from notetaker import store
+sessions = store.list_sessions(limit=1)
+print(sessions[0].id if sessions else "")
+PY
+)"
+        if [[ -z "$latest" ]]; then
+            echo "No lectures recorded yet. Run: notes"
+            exit 0
+        fi
+        run show "$latest"
+        ;;
+    all|ls)
+        run list
+        ;;
+    help|-h|--help)
+        cat <<'EOF'
+notes            record this lecture now (microphone)
+notes online     record an online lecture (Zoom/Teams/YouTube)
+notes last       show the notes from your last lecture
+notes all        list every lecture
+
+Press Ctrl-C to stop recording. Notes are written automatically.
+
+Anything else is passed to the full CLI, for example:
+  notes record --title "Physics week 4" --lang th
+  notes summarize physics --hq
+  notes export physics -o notes.md
+EOF
+        ;;
+    *)
+        run "$@"
+        ;;
+esac

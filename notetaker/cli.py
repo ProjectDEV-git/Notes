@@ -113,6 +113,8 @@ def _render_live(state, source_label: str, live_notes: bool):
     body.add_row(header)
     body.add_row(meter)
     body.add_row(Text(f"chunks transcribed: {state.chunks_done}", style="dim"))
+    if state.warning:
+        body.add_row(Text(f"⚠ {state.warning}", style="yellow"))
 
     if state.recent_text:
         body.add_row(Text("\nTranscript", style="bold"))
@@ -184,7 +186,14 @@ def cmd_record(args: argparse.Namespace) -> int:
             while not stopping.is_set():
                 stopping.wait(1.0)
     finally:
-        echo("\n[dim]finishing up, transcribing the last chunk...[/dim]")
+        pending = pipeline.state.chunks_pending
+        if pending:
+            echo(
+                f"\n[yellow]transcription is {pending} chunks behind, catching up now.[/yellow] "
+                "[dim]This is normal for Thai, which runs slower than real time on CPU.[/dim]"
+            )
+        else:
+            echo("\n[dim]finishing up, transcribing the last chunk...[/dim]")
         pipeline.stop()
         duration = pipeline.finish()
 

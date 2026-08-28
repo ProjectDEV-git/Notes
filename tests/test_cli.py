@@ -181,3 +181,18 @@ def test_existing_notes_are_not_regenerated_by_default(db, monkeypatch, capsys):
     monkeypatch.setattr("notetaker.summarize.summarize_segments", explode)
     assert cli.cmd_summarize(cli.build_parser().parse_args(["summarize", session.id])) == 0
     assert "--rerun" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------- ASR backlog
+def test_backlog_flag_is_off_when_keeping_up():
+    from notetaker.pipeline import PipelineState
+
+    assert not PipelineState(chunks_done=5, chunks_pending=0).is_falling_behind
+    assert not PipelineState(chunks_done=5, chunks_pending=2).is_falling_behind
+
+
+def test_backlog_flag_trips_when_behind():
+    """Thai runs ~5x slower than real time, so a backlog must be visible."""
+    from notetaker.pipeline import PipelineState
+
+    assert PipelineState(chunks_done=1, chunks_pending=3).is_falling_behind

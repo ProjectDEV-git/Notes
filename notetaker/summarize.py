@@ -30,6 +30,9 @@ _ORPHAN_THINK = re.compile(r"</?think>", re.IGNORECASE)
 _BULLET = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+")
 # Internal tag used to route admin asides; must never appear in final notes.
 ADMIN_LINE = re.compile(r"ADMIN\s*:\s*", re.IGNORECASE)
+# Punctuation stripped for grounding checks, but digits and units are kept so a
+# bullet citing "150 J" stays traceable to its source line.
+_PUNCT_KEEP = re.compile(r"[^\w\s]", re.UNICODE)
 
 
 class SummarizerError(RuntimeError):
@@ -142,6 +145,83 @@ def parse_bullets(text: str) -> list[str]:
             if cleaned:
                 bullets.append(cleaned)
     return bullets
+
+
+def _stem(word: str) -> str:
+    """Crude suffix stripping so 'lifted'/'lift' and 'converts'/'convert' match."""
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(word) > len(suffix) + 3 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
+def _content_words(text: str) -> set[str]:
+    """Distinctive words of a line, for grounding checks.
+
+    Short words are dropped because they are shared by almost any sentence.
+    Words are stemmed so paraphrase is not punished. Thai has no word spaces,
+    so character n-grams stand in for words there.
+    """
+    lowered = _PUNCT_KEEP.sub(" ", text.lower())
+    words = {_stem(w) for w in lowered.split() if len(w) > 3}
+    thai = "".join(ch for ch in lowered if "\u0e00" <= ch <= "\u0e7f")
+    if thai:
+        words |= {thai[i:i + 4] for i in range(len(thai) - 3)}
+    return words
+
+
+def _numbers(text: str) -> set[str]:
+    """Digit sequences, which are strong evidence a bullet came from the source."""
+    return set(re.findall(r"\d+", text))
+
+
+def drop_ungrounded(
+    bullets: list[str],
+    sources: list[str],
+    threshold: float = config.GROUNDING_THRESHOLD,
+) -> list[str]:
+    """Remove bullets that the source text does not support.
+
+    A small model handed a short or vague excerpt will confidently invent a
+    whole lecture around the topic it thinks it heard. Every bullet must be
+    traceable to what was actually said.
+
+    Two signals are used:
+      * shared stemmed content words, which tolerates paraphrase
+      * shared numbers, which are near-impossible to produce by chance and so
+        immediately accept a bullet such as "15 kg lifted 1 m gives 150 J"
+    """
+    if not sources:
+        return bullets
+
+    vocabulary: set[str] = set()
+    source_numbers: set[str] = set()
+    for source in sources:
+        vocabulary |= _content_words(source)
+        source_numbers |= _numbers(source)
+
+    kept: list[str] = []
+    for bullet in bullets:
+        words = _content_words(bullet)
+        if not words:
+            continue
+
+        digits = _numbers(bullet)
+        shared_digits = digits & source_numbers
+        if shared_digits:
+            # Quotes a figure that really was said. Distinctive enough to trust,
+            # even if the bullet also writes "1 m" where the speaker said
+            # "one meter".
+            kept.append(bullet)
+            continue
+
+        if digits and not shared_digits and len(digits) > 1:
+            # Several numbers, none of which appear in the source: fabricated.
+            continue
+
+        if len(words & vocabulary) / len(words) >= threshold:
+            kept.append(bullet)
+    return kept
 
 
 def dedupe_points(points: list[str], threshold: float = 0.85) -> list[str]:
@@ -276,8 +356,20 @@ def chat(
 ADMIN_PREFIX = re.compile(r"^ADMIN\s*:\s*", re.IGNORECASE)
 
 
-def map_window(window: Window, language: str, model: str) -> tuple[list[str], list[str]]:
-    """Extract key points from one window. Returns (key_points, admin_points)."""
+def map_window(
+    window: Window,
+    language: str,
+    model: str,
+    grounding_source: str | None = None,
+) -> tuple[list[str], list[str]]:
+    """Extract key points from one window. Returns (key_points, admin_points).
+
+    Points are grounded against the transcript, because a small model handed a
+    short or vague excerpt will confidently invent a whole lecture around the
+    topic it thinks it heard. `grounding_source` defaults to this window, but
+    callers pass the whole transcript so a point that legitimately draws on
+    nearby context is not discarded.
+    """
     prompt = config.prompts_for(language)["map"].format(text=window.text)
     bullets = parse_bullets(chat(prompt, model=model))
 
@@ -288,7 +380,12 @@ def map_window(window: Window, language: str, model: str) -> tuple[list[str], li
             admin_points.append(ADMIN_PREFIX.sub("", bullet).strip())
         else:
             key_points.append(bullet)
-    return key_points, admin_points
+
+    source = [grounding_source or window.text]
+    return (
+        drop_ungrounded(key_points, source),
+        drop_ungrounded(admin_points, source),
+    )
 
 
 def reduce_points(points: list[str], language: str, model: str) -> str:
@@ -296,6 +393,57 @@ def reduce_points(points: list[str], language: str, model: str) -> str:
     joined = "\n".join(f"- {p}" for p in points)
     prompt = config.prompts_for(language)["reduce"].format(text=joined)
     return strip_think(chat(prompt, model=model, max_tokens=config.REDUCE_MAX_TOKENS))
+
+
+def apply_grounding(markdown: str, sources: list[str]) -> str:
+    """Clean the reduced notes: drop invented bullets and repeated ones.
+
+    Two failure modes are handled:
+      * hallucination - a bullet no mapped point supports
+      * restatement   - the same idea emitted twice in different words, which
+                        dedupe_points cannot catch because it runs before reduce
+    """
+    out: list[str] = []
+    seen: list[str] = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if _BULLET.match(stripped):
+            text = _BULLET.sub("", stripped).strip()
+            if not drop_ungrounded([text], sources):
+                continue  # nobody said this
+            if len(dedupe_points(seen + [text])) == len(seen):
+                continue  # already said, in other words
+            seen.append(text)
+        out.append(line)
+    return "\n".join(out)
+
+
+_ACTION_HEADINGS = ("action items", "สิ่งที่ต้องทำ")
+
+
+def drop_unbacked_actions(markdown: str, admin_points: list[str]) -> str:
+    """Remove an Action items section when no ADMIN point was ever extracted.
+
+    Deadlines and exam dates are only trustworthy if the lecturer actually said
+    them. If the map stage found none, anything the model puts under Action
+    items is invented, and an invented deadline is worse than no deadline.
+    """
+    if admin_points:
+        return markdown
+
+    out: list[str] = []
+    skipping = False
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("##"):
+            heading = stripped.lstrip("#").strip().lower()
+            skipping = any(name in heading for name in _ACTION_HEADINGS)
+            if skipping:
+                continue
+        if skipping:
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
 def summarize_segments(
@@ -316,10 +464,13 @@ def summarize_segments(
 
     key_points: list[str] = []
     admin_points: list[str] = []
+    # Ground against the whole transcript: a point made in one window often
+    # draws on wording from an adjacent one, and should not be discarded.
+    full_transcript = " ".join(s.text for s in segments)
     for index, window in enumerate(windows, start=1):
         if progress:
             progress(index, len(windows))
-        keys, admins = map_window(window, language, model)
+        keys, admins = map_window(window, language, model, grounding_source=full_transcript)
         key_points.extend(keys)
         admin_points.extend(admins)
 
@@ -332,6 +483,10 @@ def summarize_segments(
     # Short lectures need no second pass: one window is already consolidated.
     if len(windows) > 1:
         body = reduce_points(key_points + [f"ADMIN: {p}" for p in admin_points], language, model)
+        # The reduce stage may invent plausible-sounding points that nobody
+        # said. Keep only what the mapped points actually support.
+        body = apply_grounding(body, key_points + admin_points)
+        body = drop_unbacked_actions(body, admin_points)
     else:
         body = _fallback_body(key_points, admin_points, language)
 

@@ -216,3 +216,110 @@ def test_no_empty_sections_in_output():
         if line.startswith("##"):
             rest = [l for l in lines[index + 1:] if l.strip()]
             assert rest and not rest[0].startswith("##"), f"empty section: {line}"
+
+
+# --------------------------------------------------------------- grounding
+def test_grounded_bullet_is_kept():
+    sources = ["15 kg lifted 1 m gives about 150 J", "energy is conserved"]
+    assert S.drop_ungrounded(["15 kg lifted 1 m gives about 150 J"], sources)
+
+
+def test_paraphrase_of_a_source_is_kept():
+    sources = ["conservation of mechanical energy states total energy remains constant"]
+    kept = S.drop_ungrounded(["Conservation of mechanical energy keeps total energy constant"], sources)
+    assert kept
+
+
+def test_invented_bullet_is_dropped():
+    """The reduce stage adds plausible advice nobody said. It must not survive."""
+    sources = ["15 kg lifted 1 m gives about 150 J", "energy converts between forms"]
+    assert S.drop_ungrounded(["Review the lecture slides for accuracy"], sources) == []
+
+
+def test_invented_homework_is_dropped():
+    sources = ["photosynthesis converts light to chemical energy"]
+    assert S.drop_ungrounded(["Complete pending assignments before the deadline"], sources) == []
+
+
+def test_grounding_is_skipped_when_there_are_no_sources():
+    assert S.drop_ungrounded(["anything"], []) == ["anything"]
+
+
+def test_thai_grounding_keeps_real_content():
+    sources = ["การสังเคราะห์แสงเปลี่ยนพลังงานแสงเป็นพลังงานเคมี"]
+    assert S.drop_ungrounded(["การสังเคราะห์แสงเปลี่ยนพลังงานแสงเป็นพลังงานเคมี"], sources)
+
+
+def test_thai_grounding_drops_invented_content():
+    sources = ["การสังเคราะห์แสงเปลี่ยนพลังงานแสงเป็นพลังงานเคมี"]
+    assert S.drop_ungrounded(["ทบทวนสไลด์การบรรยายก่อนสอบปลายภาค"], sources) == []
+
+
+def test_grounding_removes_restated_duplicates():
+    markdown = "## Key ideas\n- energy is conserved\n- Energy is conserved.\n"
+    result = S.apply_grounding(markdown, ["energy is conserved"])
+    assert result.count("nergy is conserved") == 1
+
+
+# ------------------------------------------------------- unbacked action items
+def test_action_items_dropped_when_no_admin_point_exists():
+    """An invented deadline is worse than no deadline."""
+    markdown = "## Key ideas\n- a real point\n\n## Action items\n- Review the slides\n"
+    result = S.drop_unbacked_actions(markdown, admin_points=[])
+    assert "Action items" not in result
+    assert "a real point" in result
+
+
+def test_action_items_kept_when_admin_point_exists():
+    markdown = "## Key ideas\n- a point\n\n## Action items\n- exam on Friday\n"
+    result = S.drop_unbacked_actions(markdown, admin_points=["exam on Friday"])
+    assert "Action items" in result
+
+
+def test_thai_action_heading_dropped_when_unbacked():
+    markdown = "## แนวคิดสำคัญ\n- จุดสำคัญ\n\n## สิ่งที่ต้องทำ\n- ทบทวนสไลด์\n"
+    assert "สิ่งที่ต้องทำ" not in S.drop_unbacked_actions(markdown, admin_points=[])
+
+
+# ------------------------------------------------- grounding: real-world case
+def test_vague_clip_yields_no_invented_lecture():
+    """Regression from a real 16s recording.
+
+    From "today we'll be learning about more regular structures" the model
+    invented a linguistics lecture about phonemes, morphemes and noun
+    declension. None of it was said.
+    """
+    source = ["I forgot my mic, okay, now today we'll be learning about more regular structures."]
+    invented = [
+        "Regular grammar is a set of rules governing sentence formation",
+        "These structures use phonemes and morphemes to convey meaning",
+        "Examples include verb conjugation, noun declension, and sentence syntax",
+    ]
+    assert S.drop_ungrounded(invented, source) == []
+
+
+def test_paraphrase_survives_stemming():
+    """'lifted' must match 'lift', or real points get thrown away."""
+    source = ["I can lift it up one meter and the energy converts to kinetic energy"]
+    assert S.drop_ungrounded(["Energy converted to kinetic energy when lifted"], source)
+
+
+def test_quoted_figures_are_trusted():
+    """Numbers that appear in the source are strong evidence a point is real."""
+    source = ["an object that weighs 15 kilograms lifted one meter is about 150 joules"]
+    assert S.drop_ungrounded(["15 kg lifted 1 m gives about 150 J"], source)
+
+
+def test_invented_figures_are_rejected():
+    """A number nobody said is a fabrication, even if the words look plausible."""
+    source = ["energy is conserved in a closed system"]
+    assert S.drop_ungrounded(["The system loses 42 joules per second"], source) == []
+
+
+def test_empty_transcript_after_grounding_raises():
+    """Refusing to write notes beats inventing them."""
+    from notetaker.asr import Segment
+
+    vague = [Segment(0.0, 16.0, "um, okay, so, right", "en", 0)]
+    with pytest.raises(S.SummarizerError):
+        S.summarize_segments(vague, model=config.TEST_MODEL)
