@@ -4,6 +4,11 @@ This document is written so that **any agent or developer can pick it up cold** 
 continue the build without re-deriving decisions. Follow phases in order. Do not skip
 the "Verify" step at the end of each phase.
 
+> **Status: phases 1-8b are built and verified. 123 tests pass.**
+> Remaining: the optional PyQt6 GUI (phase 9) and a long real-lecture acceptance run.
+> Sections below marked **REVISED** record where the original plan turned out to be
+> wrong once measured against real hardware. Trust the revised text.
+
 ---
 
 ## 0. What we are building (read this first)
@@ -67,8 +72,27 @@ are the expected values on this box.
 | Overlap **must be deduped** | Otherwise the same phrase appears twice in the transcript. This is the #1 correctness bug in this design. |
 | Append to `transcript.jsonl` immediately | Crash-safety. A dropped laptop mid-lecture must not lose an hour of notes. |
 | Map-reduce summarization | A 50-min lecture is ~8k+ words and overflows a small model's context. Cannot one-shot it. |
-| Ollama `qwen3:8b` | ~5 GB, multilingual (handles Thai), fits in free RAM. `qwen2.5-coder:7b` is a **code** model — wrong tool. `qwen3:0.6b` is for fast tests only. |
+| Ollama **`llama3.2:3b`** (**REVISED**) | Originally `qwen3:8b`. Measurement rejected it, see below. |
 | CLI before GUI | Prove the audio→ASR→summary engine works before spending effort on UI. |
+
+### REVISED: summarizer model choice
+
+The plan originally specified `qwen3:8b`. Measurement on this CPU rejected it, and the
+rest of the qwen3 family too:
+
+| model | measured result |
+|---|---|
+| **llama3.2:3b** | **63 s for a 3-min lecture, clean bullets first try, correct Thai. Now the default.** |
+| qwen3:4b | timed out at 300 s per window; narrates instead of answering; replies in English to Thai input |
+| qwen3:8b | 1.6 tok/s, roughly 25 min for a 50-min lecture |
+| qwen3:0.6b | fast, but echoes the transcript verbatim instead of summarizing |
+
+Root cause: the qwen3 family is reasoning-first. Even with `think=false` it spends the
+token budget on chain-of-thought, either in a separate `thinking` field (leaving
+`content` empty) or dumped into `content` as prose. **Use a non-reasoning instruct
+model for this task.** Two mitigations are in the code: `num_predict` is capped so a
+rambling model cannot run until the request times out, and an empty-content-with-
+thinking response raises a clear error instead of silently writing empty notes.
 
 ---
 
@@ -134,7 +158,7 @@ ASR_MODEL_HQ  = "large-v3-turbo"   # optional higher-accuracy re-run
 COMPUTE_TYPE  = "int8"
 CPU_THREADS   = 8                  # of 12; leave headroom for capture + UI
 LANGUAGE      = None               # None = autodetect en/th; overridable
-SUMMARY_MODEL = "qwen3:8b"
+SUMMARY_MODEL = "llama3.2:3b"   # REVISED, see the model table
 TEST_MODEL    = "qwen3:0.6b"
 OLLAMA_URL    = "http://localhost:11434"
 PROMPTS       = {...}              # map + reduce prompts, see Phase 7
@@ -274,7 +298,7 @@ Session id: timestamp-based and sortable, e.g. `2026-08-27_0930_lecture-title-sl
 
 ## 9. Phase 6 — Pull the summarizer model
 
-`ollama pull qwen3:8b` (~5 GB). **Already started in the background** during scaffolding;
+`ollama pull llama3.2:3b` (~2 GB). **REVISED**: the plan originally called for qwen3:8b;
 check `/tmp/ollama_pull_qwen3.log` and confirm with `ollama list` before Phase 7.
 
 ---
@@ -387,3 +411,24 @@ no duplicated capture/ASR logic. Threaded so the UI never blocks.
    `~/.local/share/notetaker/`.
 9. **Strip `<think>` blocks** from qwen3 output before writing notes.
 10. **Never add a cloud API fallback.** Offline-only is a hard requirement.
+
+### Traps found the hard way during the build
+
+11. **Do not trust a WAV header's frame count.** ffmpeg cannot always seek back to
+    patch the RIFF header when stopped mid-write, leaving `INT32_MAX`. This reported a
+    65-second recording as 37 hours. Derive duration from actual data size and
+    cross-check against wall clock.
+12. **"System audio" must follow the *active* default sink.** Resolving the built-in
+    card's monitor while the user is listening on Bluetooth records an hour of silence.
+13. **PulseAudio silently falls back to the default source for an unknown device name**,
+    so ffmpeg "succeeds" while recording the wrong input. Validate the name first.
+14. **A monitor source captures everything audible**, including unrelated tabs. That is
+    correct behaviour, but it means test audio must be isolated in a null sink or the
+    transcript will contain whatever else was playing.
+15. **Report the detected language from the first chunk.** Locking only after 3 chunks
+    left short lectures with `lang=None`, which silently selected English prompts for a
+    Thai lecture.
+16. **Strip model artefacts that survive prompt instructions**: empty headings, "None"
+    placeholders, leaked internal `ADMIN:` tags, and doubled `- -` bullets.
+17. **Assert compression in tests.** A weak model produces fluent output that is simply
+    the transcript rewritten. Only a length assertion catches that.
