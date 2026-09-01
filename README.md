@@ -21,13 +21,31 @@ no audio ever leaves the laptop.
 
 ## Quick start
 
-One word to start recording:
+One word, and pick from a list. Nothing to remember:
 
 ```bash
-notes            # record this lecture now (microphone)
+notes            # opens a menu: pick a number, press Enter
+```
+
+```
+  1. Record a lecture I am attending — uses the microphone
+  2. Record an online lecture — Zoom, Teams, YouTube
+  3. Read my notes — from a past lecture
+  4. Write notes for a past lecture — if they are missing
+  5. Save notes to a file — to share or print
+  6. Record with more options — language, title, source
+  7. Check that everything works — microphone, notes writer
+```
+
+Pressing Enter records straight away, which is what you want most of the time.
+Every action prints the command it ran, so you can skip the menu later:
+
+```bash
+notes now        # record this lecture now (microphone)
 notes online     # record an online lecture (Zoom/Teams/YouTube)
 notes last       # show the notes from your last lecture
 notes all        # list every lecture
+notes check      # confirm your microphone and notes writer work
 ```
 
 Press **Ctrl-C** to stop. It transcribes the last chunk, then prints and saves
@@ -48,6 +66,8 @@ notes export physics -o notes.md
 
 ```bash
 notetaker devices                      # which mic / system-audio sources exist
+notetaker menu                         # the numbered menu
+notetaker check                        # verify audio devices and Ollama
 notetaker record [--source mic|system] [--title T] [--live-notes] [--lang auto|en|th]
 notetaker list                         # past recordings
 notetaker show <id> [--transcript]
@@ -78,19 +98,30 @@ lecture. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
 
 ## Install
 
-Requires Linux with PipeWire or PulseAudio, `ffmpeg`, and
-[Ollama](https://ollama.com).
+Runs on **Linux** (PipeWire/PulseAudio) and **macOS** (AVFoundation). Needs
+`ffmpeg` and [Ollama](https://ollama.com).
 
 ```bash
 git clone <this repo> && cd NoteTaker
-python3 -m venv .venv --system-site-packages
-.venv/bin/pip install -r requirements.txt
+./install.sh                # sets everything up and installs the `notes` command
 
 ollama pull llama3.2:3b     # writes the notes
-./run.sh devices            # check your audio devices
+notes check                 # confirms your microphone and notes writer work
 ```
 
 The Whisper model downloads itself on first run (~500 MB).
+
+**On macOS**, recording an *online* lecture needs a loopback driver, because
+CoreAudio has no way to capture what the speakers are playing:
+
+```bash
+brew install blackhole-2ch
+```
+
+Then in **Audio MIDI Setup** create a Multi-Output Device combining BlackHole
+with your speakers, and select it as the output, so you still hear the lecture
+while it is recorded. The first recording asks for Microphone permission for
+your terminal.
 
 ---
 
@@ -191,15 +222,21 @@ after class. Transcription itself happens live.
 - **System audio captures everything you can hear.** Mute unrelated tabs before
   recording an online lecture, or you will get their content in your notes.
 - Summarizing is CPU-bound and will make the laptop warm.
-- Linux only. The capture layer is built on PulseAudio/PipeWire.
+- **macOS needs a loopback driver for online lectures.** BlackHole or similar;
+  see Install. In-person recording works with no extra setup.
+- Linux and macOS only. Windows is not supported.
 
 ## If something goes wrong
 
-**"no 'system' source available"** — your machine exposes no `.monitor` device.
-Check `notetaker devices`.
+**"no 'system' source available"** — run `notes check`. On Linux your machine
+exposes no `.monitor` device; on macOS you need a loopback driver
+(`brew install blackhole-2ch`).
 
 **Recording is silent** — for online lectures, make sure the audio really is
 playing through the sink you selected. `notetaker devices` marks the default.
+
+**Not sure what is wrong** — run `notes check`. It tests every part and prints
+the exact command to fix whatever is missing.
 
 **"cannot reach Ollama"** — run `ollama serve`. Your transcript is already
 saved; run `notetaker summarize <id>` once Ollama is up.

@@ -76,4 +76,8 @@ case ":$PATH:" in
 esac
 
 echo
-echo "Done. Start recording a lecture with:  notes"
+echo "Done. Type one word to begin:"
+echo
+echo "  notes"
+echo
+echo "It shows a short list. Pick a number, or just press Enter to record."

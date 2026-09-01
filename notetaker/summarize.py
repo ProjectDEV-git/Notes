@@ -285,6 +285,20 @@ def ollama_available(url: str = config.OLLAMA_URL, timeout: float = 3.0) -> bool
         return False
 
 
+def installed_models(url: str = config.OLLAMA_URL, timeout: float = 3.0) -> list[str]:
+    """Names of models Ollama has locally.
+
+    Used by the setup check: an unreachable Ollama and a missing model look the
+    same at record time (no notes), but the fixes are different.
+    """
+    try:
+        with urllib.request.urlopen(f"{url}/api/tags", timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return []
+    return [entry.get("name", "") for entry in data.get("models", [])]
+
+
 def chat(
     prompt: str,
     model: str = config.SUMMARY_MODEL,

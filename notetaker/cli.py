@@ -64,6 +64,23 @@ def format_duration(seconds: float) -> str:
 # --------------------------------------------------------------------------
 # devices
 # --------------------------------------------------------------------------
+def cmd_menu(args: argparse.Namespace) -> int:
+    """The friendly front door: a numbered list, no flags to remember."""
+    from .menu import main as menu_main
+
+    return menu_main()
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    """Verify the machine can record and summarize before a lecture starts."""
+    from .menu import print_checks, run_checks
+
+    ok = print_checks(run_checks())
+    if ok:
+        echo("\n[green]Everything is ready. You can record a lecture.[/green]")
+    return 0 if ok else 1
+
+
 def cmd_devices(args: argparse.Namespace) -> int:
     try:
         sources = list_sources()
@@ -489,6 +506,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    subparsers.add_parser("menu", help="the simple menu (no commands to remember)")
+    subparsers.add_parser("check", help="check the microphone, devices and notes writer")
     subparsers.add_parser("devices", help="list microphones and system-audio sources")
 
     record = subparsers.add_parser("record", help="record a lecture and summarize it")
@@ -553,6 +572,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 COMMANDS = {
+    "menu": cmd_menu,
+    "check": cmd_check,
     "devices": cmd_devices,
     "record": cmd_record,
     "list": cmd_list,
@@ -564,6 +585,11 @@ COMMANDS = {
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # Bare `notetaker` used to print a usage error. A non-technical user has
+    # nothing to go on at that point, so open the menu instead.
+    if not argv:
+        argv = ["menu"]
     args = build_parser().parse_args(argv)
     try:
         return COMMANDS[args.command](args)

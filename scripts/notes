@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # `notes` - one-word launcher for NoteTaker.
 #
-#   notes            start recording straight away (asks nothing)
+#   notes            open the menu (nothing to remember)
+#   notes now        start recording straight away (microphone)
 #   notes online     record an online lecture (Zoom/Teams/YouTube)
 #   notes last       show the notes from the most recent lecture
 #   notes all        list every lecture
+#   notes check      confirm the microphone and notes writer work
 #   notes <anything else>  passed straight through to the full CLI
+#
+# Plain-English words are accepted for every action, because a user who has
+# not read the docs will type what they mean, not a flag.
 #
 # Everything runs offline on this machine.
 
@@ -16,47 +21,58 @@ PY="$APP_DIR/.venv/bin/python"
 
 if [[ ! -x "$PY" ]]; then
     echo "NoteTaker is not set up at $APP_DIR" >&2
+    echo "Run its install.sh to finish setting it up." >&2
     exit 1
 fi
 
 run() { cd "$APP_DIR" && exec "$PY" -m notetaker.cli "$@"; }
 
-case "${1-}" in
-    # Bare `notes` starts recording from the microphone: the common case.
-    "")
-        run record --source mic --live-notes
-        ;;
-    online|zoom|teams|system)
-        shift
-        run record --source system --live-notes "$@"
-        ;;
-    mic|class|lecture)
-        shift
-        run record --source mic --live-notes "$@"
-        ;;
-    last)
-        cd "$APP_DIR"
-        latest="$("$PY" - <<'PY'
+latest_session() {
+    cd "$APP_DIR" && "$PY" - <<'PY'
 from notetaker import store
 sessions = store.list_sessions(limit=1)
 print(sessions[0].id if sessions else "")
 PY
-)"
+}
+
+case "${1-}" in
+    # Bare `notes` opens the menu: the user does not have to know anything.
+    "")
+        run menu
+        ;;
+    now|start|record|go|mic|class|lecture)
+        shift
+        run record --source mic --live-notes "$@"
+        ;;
+    online|zoom|teams|system|meet|youtube)
+        shift
+        run record --source system --live-notes "$@"
+        ;;
+    last|latest|read)
+        latest="$(latest_session)"
         if [[ -z "$latest" ]]; then
-            echo "No lectures recorded yet. Run: notes"
+            echo "No lectures recorded yet. Run: notes now"
             exit 0
         fi
         run show "$latest"
         ;;
-    all|ls)
+    all|ls|list)
         run list
+        ;;
+    check|test|doctor|setup)
+        run check
+        ;;
+    menu)
+        run menu
         ;;
     help|-h|--help)
         cat <<'EOF'
-notes            record this lecture now (microphone)
+notes            open the menu - pick what you want from a list
+notes now        record this lecture now (microphone)
 notes online     record an online lecture (Zoom/Teams/YouTube)
 notes last       show the notes from your last lecture
 notes all        list every lecture
+notes check      confirm the microphone and notes writer work
 notes lang       add or list note languages
 
 Press Ctrl-C to stop recording. Notes are written automatically.
