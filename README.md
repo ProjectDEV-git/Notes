@@ -98,27 +98,39 @@ lecture. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
 
 ## Install
 
-Runs on **Linux** (PipeWire/PulseAudio) and **macOS** (AVFoundation). Needs
-`ffmpeg` and [Ollama](https://ollama.com).
+Runs on **Linux** (PipeWire/PulseAudio) and **macOS** (AVFoundation).
+
+One command sets up everything, including ffmpeg, Ollama and the summary model:
 
 ```bash
 git clone <this repo> && cd NoteTaker
-./install.sh                # sets everything up and installs the `notes` command
-
-ollama pull llama3.2:3b     # writes the notes
-notes check                 # confirms your microphone and notes writer work
+./install.sh
 ```
+
+It asks before installing anything and prints every command it runs, including
+each `sudo`. It detects apt, dnf, pacman, zypper, apk and Homebrew, adds the
+`notes` command to your PATH, and finishes by checking that recording and
+note-writing actually work.
+
+```bash
+./install.sh --yes          # install everything without asking
+./install.sh --no-install   # only check, install nothing
+```
+
+Already have your own setup? `notes check` tells you what is missing and the
+exact command to fix it.
 
 The Whisper model downloads itself on first run (~500 MB).
 
 **On macOS**, recording an *online* lecture needs a loopback driver, because
-CoreAudio has no way to capture what the speakers are playing:
+CoreAudio has no way to capture what the speakers are playing. `install.sh`
+offers to install BlackHole for you; otherwise:
 
 ```bash
-brew install blackhole-2ch
+brew install --cask blackhole-2ch
 ```
 
-Then in **Audio MIDI Setup** create a Multi-Output Device combining BlackHole
+Either way, in **Audio MIDI Setup** create a Multi-Output Device combining BlackHole
 with your speakers, and select it as the output, so you still hear the lecture
 while it is recorded. The first recording asks for Microphone permission for
 your terminal.
@@ -250,7 +262,7 @@ transcription.
 ## Development
 
 ```bash
-.venv/bin/python -m pytest tests/ -q      # 123 tests
+.venv/bin/python -m pytest tests/ -q      # full suite
 ```
 
 Tests that need audio hardware or Ollama skip themselves when unavailable.
