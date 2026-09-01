@@ -29,7 +29,21 @@ def _have_pulse() -> bool:
         return False
 
 
-needs_audio = pytest.mark.skipif(not _have_pulse(), reason="PulseAudio/ffmpeg unavailable")
+def _have_avfoundation() -> bool:
+    if shutil.which("ffmpeg") is None:
+        return False
+    try:
+        return bool(audio._list_sources_avfoundation())
+    except Exception:
+        return False
+
+
+def _have_capture() -> bool:
+    return _have_avfoundation() if audio.IS_MACOS else _have_pulse()
+
+
+needs_audio = pytest.mark.skipif(not _have_capture(), reason="no capture backend available")
+needs_pulse = pytest.mark.skipif(not _have_pulse(), reason="PulseAudio/ffmpeg unavailable")
 
 
 # ---------------------------------------------------------------- enumeration
@@ -38,7 +52,7 @@ def test_lists_at_least_one_source():
     assert audio.list_sources()
 
 
-@needs_audio
+@needs_pulse
 def test_monitor_sources_are_tagged_as_system_audio():
     """A '.monitor' source captures playback: that is the online-lecture path."""
     for src in audio.list_sources():
@@ -150,7 +164,7 @@ def test_final_partial_chunk_is_drained(tmp_path):
     assert len(chunks) == len(on_disk), "a chunk was left unprocessed"
 
 
-@needs_audio
+@needs_pulse
 def test_captures_real_signal_from_system_audio(tmp_path):
     """The online-lecture path: play a tone, confirm the monitor source hears it.
 
@@ -237,3 +251,84 @@ def test_bad_device_raises_clear_error(tmp_path):
                               kind=config.SOURCE_MIC)
     with pytest.raises(audio.AudioError):
         audio.Recorder(bogus, tmp_path).start()
+
+
+# ------------------------------------------------------- macOS backend
+# These run everywhere: they parse a captured ffmpeg listing rather than
+# touching hardware, so the macOS path stays covered from a Linux machine.
+_AVF_LISTING = """\
+[AVFoundation indev @ 0x7f8] AVFoundation video devices:
+[AVFoundation indev @ 0x7f8] [0] FaceTime HD Camera
+[AVFoundation indev @ 0x7f8] [1] Capture screen 0
+[AVFoundation indev @ 0x7f8] AVFoundation audio devices:
+[AVFoundation indev @ 0x7f8] [0] MacBook Pro Microphone
+[AVFoundation indev @ 0x7f8] [1] BlackHole 2ch
+"""
+
+
+def _parse_avf(monkeypatch, listing=_AVF_LISTING):
+    monkeypatch.setattr(audio, "_avfoundation_output", lambda: listing)
+    return audio._list_sources_avfoundation()
+
+
+def test_macos_listing_ignores_video_devices(monkeypatch):
+    """Capturing 'FaceTime HD Camera' as audio device 0 would record nothing."""
+    sources = _parse_avf(monkeypatch)
+    assert [s.description for s in sources] == ["MacBook Pro Microphone", "BlackHole 2ch"]
+
+
+def test_macos_device_names_are_avfoundation_indices(monkeypatch):
+    """ffmpeg takes '<video>:<audio>', so an audio-only input must start with ':'."""
+    assert [s.name for s in _parse_avf(monkeypatch)] == [":0", ":1"]
+
+
+def test_macos_loopback_is_the_system_audio_source(monkeypatch):
+    """macOS has no monitor source: only a loopback driver can capture playback."""
+    sources = _parse_avf(monkeypatch)
+    kinds = {s.description: s.kind for s in sources}
+    assert kinds["BlackHole 2ch"] == config.SOURCE_SYSTEM
+    assert kinds["MacBook Pro Microphone"] == config.SOURCE_MIC
+
+
+def test_macos_first_audio_device_is_default(monkeypatch):
+    sources = _parse_avf(monkeypatch)
+    assert sources[0].is_default and not sources[1].is_default
+
+
+def test_macos_system_without_loopback_explains_the_fix(monkeypatch):
+    """The failure mode users will hit: no BlackHole installed."""
+    listing = """\
+[AVFoundation indev @ 0x7f8] AVFoundation audio devices:
+[AVFoundation indev @ 0x7f8] [0] MacBook Pro Microphone
+"""
+    monkeypatch.setattr(audio, "IS_MACOS", True)
+    monkeypatch.setattr(audio, "_avfoundation_output", lambda: listing)
+    monkeypatch.setattr(audio, "list_sources", audio._list_sources_avfoundation)
+    with pytest.raises(audio.AudioError, match="blackhole"):
+        audio.resolve_source(config.SOURCE_SYSTEM)
+
+
+def test_macos_source_can_be_named_by_description(monkeypatch):
+    """':1' is meaningless to a user; 'BlackHole 2ch' is what they see."""
+    monkeypatch.setattr(audio, "IS_MACOS", True)
+    monkeypatch.setattr(audio, "_avfoundation_output", lambda: _AVF_LISTING)
+    monkeypatch.setattr(audio, "list_sources", audio._list_sources_avfoundation)
+    assert audio.resolve_source("BlackHole 2ch").name == ":1"
+
+
+def test_macos_recorder_uses_avfoundation_input(monkeypatch, tmp_path):
+    """'-f pulse' does not exist on macOS; the input must be avfoundation."""
+    monkeypatch.setattr(audio, "IS_MACOS", True)
+    src = audio.AudioSource(name=":1", description="BlackHole 2ch",
+                            kind=config.SOURCE_SYSTEM)
+    cmd = audio.Recorder(src, tmp_path)._build_command()
+    assert "pulse" not in cmd
+    assert cmd[cmd.index("-f") + 1] == "avfoundation"
+    assert cmd[cmd.index("-i") + 1] == ":1"
+
+
+def test_linux_recorder_still_uses_pulse_input(tmp_path):
+    src = audio.AudioSource(name="mic0", description="Mic", kind=config.SOURCE_MIC)
+    cmd = audio.Recorder(src, tmp_path)._build_command()
+    expected = "avfoundation" if audio.IS_MACOS else "pulse"
+    assert cmd[cmd.index("-f") + 1] == expected

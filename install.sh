@@ -28,13 +28,35 @@ echo "  installed $BIN_DIR/notes"
 # 3. checks the user cannot skip silently
 missing=()
 command -v ffmpeg  >/dev/null || missing+=("ffmpeg")
-command -v pactl   >/dev/null || missing+=("pulseaudio-utils")
 command -v ollama  >/dev/null || missing+=("ollama (https://ollama.com)")
 
-if (( ${#missing[@]} )); then
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    if (( ${#missing[@]} )); then
+        echo
+        echo "Still needed: ${missing[*]}"
+        echo "  brew install ffmpeg"
+        echo "  brew install --cask ollama"
+    fi
+    # macOS cannot capture system audio without a loopback driver: CoreAudio
+    # exposes no monitor of the output. Without one, `notes online` is dead.
+    if command -v ffmpeg >/dev/null &&
+       ! ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 |
+         grep -qiE "blackhole|soundflower|loopback"; then
+        echo
+        echo "For online lectures (system audio) macOS needs a loopback device:"
+        echo "  brew install blackhole-2ch"
+        echo "Then in Audio MIDI Setup create a Multi-Output Device with"
+        echo "BlackHole + your speakers, so you can still hear the lecture."
+    fi
     echo
-    echo "Still needed: ${missing[*]}"
-    echo "  sudo apt install ffmpeg pulseaudio-utils"
+    echo "The first recording will ask for Microphone permission for your terminal."
+else
+    command -v pactl >/dev/null || missing+=("pulseaudio-utils")
+    if (( ${#missing[@]} )); then
+        echo
+        echo "Still needed: ${missing[*]}"
+        echo "  sudo apt install ffmpeg pulseaudio-utils"
+    fi
 fi
 
 if command -v ollama >/dev/null && ! ollama list 2>/dev/null | grep -q "llama3.2:3b"; then
