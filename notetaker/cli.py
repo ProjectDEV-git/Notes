@@ -217,9 +217,12 @@ def cmd_record(args: argparse.Namespace) -> int:
 
     label = f"{source.description} ({'system audio' if source.kind == config.SOURCE_SYSTEM else 'microphone'})"
     if limit is not None:
+        # Only mention the overrun when it rounds to a whole minute, otherwise
+        # a short grace period reads as the nonsensical "plus 0 min".
+        extra = config.CLASS_OVERRUN_SECONDS // 60
+        grace = f" (plus {extra} min in case the class runs over)" if extra else ""
         echo(
-            f"[dim]recording for {minutes} minutes, then stopping by itself "
-            f"(plus {config.CLASS_OVERRUN_SECONDS // 60} min in case the class runs over). "
+            f"[dim]recording for {minutes} minutes, then stopping by itself{grace}. "
             "Ctrl-C stops it sooner.[/dim]"
         )
     try:
@@ -240,7 +243,10 @@ def cmd_record(args: argparse.Namespace) -> int:
                 stopping.wait(1.0)
     finally:
         pending = pipeline.state.chunks_pending
-        if pending:
+        if later:
+            # Nothing is being transcribed, so do not claim otherwise.
+            echo("\n[dim]saving the recording...[/dim]")
+        elif pending:
             echo(
                 f"\n[yellow]transcription is {pending} chunks behind, catching up now.[/yellow] "
                 "[dim]This is normal for Thai, which runs slower than real time on CPU.[/dim]"
