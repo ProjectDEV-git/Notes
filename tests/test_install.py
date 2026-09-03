@@ -205,6 +205,14 @@ def test_notes_launcher_is_installed_and_points_at_this_checkout(sandbox):
     assert f'APP_DIR="{REPO}"' in launcher.read_text()
 
 
+def test_notes_launcher_checks_for_updates(sandbox):
+    _, home = sandbox
+    run_installer(sandbox, "--no-install")
+
+    launcher = home / ".local" / "bin" / "notes"
+    assert "notetaker.cli update --quiet" in launcher.read_text()
+
+
 def test_path_is_configured_for_the_users_shell(sandbox):
     """Telling a beginner to 'edit your rc file' is where installs die."""
     _, home = sandbox

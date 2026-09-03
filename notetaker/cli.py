@@ -25,6 +25,7 @@ from . import config, store, summarize
 from .asr import Transcriber, TranscriptWriter
 from .audio import AudioError, list_sources, resolve_source
 from .pipeline import RecordingPipeline
+from .update import UpdateError, update_checkout
 
 try:
     from rich.console import Console
@@ -59,6 +60,24 @@ def format_duration(seconds: float) -> str:
     minutes, secs = divmod(int(seconds), 60)
     hours, minutes = divmod(minutes, 60)
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    """Update the checkout without overwriting local changes."""
+    app_dir = Path(__file__).resolve().parent.parent
+    python_path = Path(sys.executable)
+    try:
+        changed, message = update_checkout(app_dir, python_path)
+    except UpdateError as exc:
+        return fail(str(exc))
+
+    if not args.quiet:
+        if changed:
+            echo("[green]NoteTaker updated.[/green]")
+        else:
+            echo("[green]NoteTaker is already up to date.[/green]")
+        echo(message)
+    return 0
 
 
 # --------------------------------------------------------------------------
@@ -660,6 +679,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("menu", help="the simple menu (no commands to remember)")
     subparsers.add_parser("check", help="check the microphone, devices and notes writer")
     subparsers.add_parser("devices", help="list microphones and system-audio sources")
+    update = subparsers.add_parser(
+        "update", help="update NoteTaker without overwriting local changes"
+    )
+    update.add_argument("--quiet", action="store_true", help=argparse.SUPPRESS)
 
     record = subparsers.add_parser("record", help="record a lecture and summarize it")
     record.add_argument(
@@ -757,6 +780,7 @@ COMMANDS = {
     "menu": cmd_menu,
     "check": cmd_check,
     "devices": cmd_devices,
+    "update": cmd_update,
     "record": cmd_record,
     "catchup": cmd_catchup,
     "list": cmd_list,

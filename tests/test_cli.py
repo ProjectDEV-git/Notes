@@ -71,6 +71,14 @@ def test_command_is_required():
         cli.build_parser().parse_args([])
 
 
+def test_update_command_is_available():
+    assert cli.build_parser().parse_args(["update"]).command == "update"
+
+
+def test_quiet_update_flag_is_available():
+    assert cli.build_parser().parse_args(["update", "--quiet"]).quiet is True
+
+
 # ---------------------------------------------------------------- formatting
 @pytest.mark.parametrize(
     "seconds,expected",

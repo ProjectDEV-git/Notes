@@ -55,7 +55,13 @@ notes online     # record an online class (Zoom/Teams/YouTube)
 notes last       # show the notes from your last class
 notes all        # list every class
 notes check      # confirm your microphone and notes writer work
+notes update     # update NoteTaker and Python dependencies safely
 ```
+
+The `notes` launcher checks for updates automatically when it starts. It skips
+the check if the checkout has local changes, and continues opening the app if
+the network is unavailable. Set `NOTES_AUTO_UPDATE=0` to disable startup
+checks.
 
 `notes class` **stops on its own** two minutes after the period ends, because
 classes overrun and the homework is usually the last thing said. Ctrl-C always
@@ -99,6 +105,7 @@ notes summarize physics --rerun --level university   # denser wording
 notetaker devices                      # which mic / system-audio sources exist
 notetaker menu                         # the numbered menu
 notetaker check                        # verify audio devices and Ollama
+notetaker update                       # update code and Python dependencies
 notetaker record [--source mic|system] [--title T] [--live-notes] [--lang auto|en|th]
                [--minutes N]           # stop by itself after N minutes
                [--later]               # record sound only, write notes later
@@ -157,7 +164,7 @@ Runs on **Linux** (PipeWire/PulseAudio) and **macOS** (AVFoundation).
 One command sets up everything, including ffmpeg, Ollama and the summary model:
 
 ```bash
-git clone <this repo> && cd NoteTaker
+git clone https://github.com/ProjectDEV-git/Notes.git NoteTaker && cd NoteTaker
 ./install.sh
 ```
 
@@ -170,6 +177,19 @@ note-writing actually work.
 ./install.sh --yes          # install everything without asking
 ./install.sh --no-install   # only check, install nothing
 ```
+
+### Update NoteTaker
+
+After the initial install, update from the configured Git repository with:
+
+```bash
+notes update
+```
+
+Updates use a fast-forward-only Git pull, so local commits and uncommitted
+changes are never overwritten. Commit or stash local changes first if the
+command reports a dirty checkout. The update also refreshes Python packages;
+system tools such as ffmpeg and Ollama are left unchanged.
 
 Already have your own setup? `notes check` tells you what is missing and the
 exact command to fix it.

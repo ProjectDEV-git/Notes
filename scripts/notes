@@ -10,6 +10,7 @@
 #   notes last       show the notes from the most recent lecture
 #   notes all        list every lecture
 #   notes check      confirm the microphone and notes writer work
+#   notes update     update NoteTaker safely from its Git repository
 #   notes <anything else>  passed straight through to the full CLI
 #
 # Plain-English words are accepted for every action, because a user who has
@@ -27,6 +28,25 @@ if [[ ! -x "$PY" ]]; then
     echo "Run its install.sh to finish setting it up." >&2
     exit 1
 fi
+
+auto_update() {
+    # Startup updates are opt-out and never block opening the app.
+    [[ "${NOTES_AUTO_UPDATE:-1}" == "0" ]] && return 0
+    [[ "${1-}" == "update" || "${1-}" == "upgrade" ]] && return 0
+    command -v git >/dev/null || return 0
+
+    # Never overwrite a checkout that contains user work, including the
+    # untracked files commonly created while developing locally.
+    local status
+    status="$(cd "$APP_DIR" && git status --porcelain 2>/dev/null || true)"
+    [[ -n "$status" ]] && return 0
+
+    if ! (cd "$APP_DIR" && "$PY" -m notetaker.cli update --quiet); then
+        echo "NoteTaker update was skipped; run 'notes update' to retry." >&2
+    fi
+}
+
+auto_update "${1-}"
 
 run() { cd "$APP_DIR" && exec "$PY" -m notetaker.cli "$@"; }
 
@@ -81,6 +101,10 @@ case "${1-}" in
     check|test|doctor|setup)
         run check
         ;;
+    update|upgrade)
+        shift
+        run update "$@"
+        ;;
     menu)
         run menu
         ;;
@@ -95,6 +119,7 @@ notes online     record an online class (Zoom/Teams/YouTube)
 notes last       show the notes from your last class
 notes all        list every class
 notes check      confirm the microphone and notes writer work
+notes update     update NoteTaker safely from its Git repository
 notes lang       add or list note languages
 
 'notes class' stops on its own. Ctrl-C always stops sooner.
