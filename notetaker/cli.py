@@ -175,7 +175,8 @@ def cmd_record(args: argparse.Namespace) -> int:
         echo("[yellow]warning:[/yellow] Ollama is not running, live notes disabled")
         args.live_notes = False
 
-    title = args.title or "Lecture"
+    # An untitled recording is a class, not a lecture, in the default register.
+    title = args.title or ("Lecture" if getattr(args, "level", None) == "university" else "Class")
     session = store.create_session(title, source.kind, source.name)
 
     language = None if args.lang in (None, "auto") else args.lang

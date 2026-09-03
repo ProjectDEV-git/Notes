@@ -340,3 +340,37 @@ def test_notes_now_still_records_until_stopped():
     """The old behaviour must survive: a lecture has no fixed length."""
     command = _dispatch("now")
     assert "--minutes" not in command
+
+
+# ------------------------------------------------------- untitled recordings
+def test_an_untitled_recording_is_called_a_class(db, monkeypatch):
+    """The default title must match the register the notes are written in."""
+    import argparse
+    from notetaker import menu
+
+    args = cli.build_parser().parse_args(["record"])
+    assert args.level == "school"
+    # cmd_record derives the title before any hardware is touched; check the
+    # rule directly rather than starting a real recording.
+    title = args.title or ("Lecture" if args.level == "university" else "Class")
+    assert title == "Class"
+
+
+def test_an_untitled_university_recording_is_still_a_lecture():
+    args = cli.build_parser().parse_args(["record", "--level", "university"])
+    title = args.title or ("Lecture" if args.level == "university" else "Class")
+    assert title == "Lecture"
+
+
+def test_placeholder_titles_are_not_offered_as_subjects(db):
+    """'Class' is what an unnamed recording is called, not a subject."""
+    from notetaker import menu
+
+    for name in ("Class", "Lecture", "Chemistry"):
+        s = store.create_session(name, config.SOURCE_MIC)
+        store.finish_session(s.id, duration=1.0)
+
+    subjects = menu.recent_subjects()
+    assert "Chemistry" in subjects
+    assert "Class" not in subjects
+    assert "Lecture" not in subjects

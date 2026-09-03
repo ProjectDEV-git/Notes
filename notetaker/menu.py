@@ -241,10 +241,13 @@ DEFAULT_SUBJECTS = (
 
 def recent_subjects(limit: int = 6) -> list[str]:
     """Subjects from past classes, most recent first, without duplicates."""
+    # Placeholder titles used when a recording was never named. Offering these
+    # back as if they were subjects would fill the list with noise.
+    placeholders = {"lecture", "class", "untitled"}
     seen: list[str] = []
     for session in store.list_sessions(limit=40):
         title = (session.title or "").strip()
-        if title and title.lower() != "lecture" and title not in seen:
+        if title and title.lower() not in placeholders and title not in seen:
             seen.append(title)
         if len(seen) >= limit:
             break
