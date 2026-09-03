@@ -260,3 +260,27 @@ def recover_incomplete(db_path: Path | None = None) -> list[Session]:
     Their transcripts are still on disk and can be summarized normally.
     """
     return [s for s in list_sessions(db_path=db_path) if not s.is_complete]
+
+
+def pending_sessions(db_path: Path | None = None) -> list[Session]:
+    """Classes that were recorded but do not have notes yet, oldest first.
+
+    Two ways a class ends up here:
+      * recorded with --later, so it has audio but no transcript
+      * transcribed, but summarizing never ran or failed
+
+    Either way the work can still be finished, which is what `catchup` does.
+    Oldest first so a school day is written up in the order it happened.
+    """
+    pending = []
+    for session in list_sessions(db_path=db_path):
+        if session.has_notes and session.notes_path.exists():
+            continue
+        # Needs something to work from: either audio to transcribe, or a
+        # transcript to summarize. A session with neither is not recoverable.
+        if session.audio_path.exists() or session.transcript_path.exists():
+            pending.append(session)
+    # started_at has minute resolution, so two back-to-back periods can tie.
+    # The id carries the collision suffix, which breaks the tie in real order.
+    pending.sort(key=lambda s: (s.started_at, s.id))
+    return pending

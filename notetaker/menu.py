@@ -231,6 +231,73 @@ def pick_language() -> str:
         return "auto"
 
 
+# Subjects offered when the student has not recorded anything yet. Typing a
+# subject name every period is exactly the kind of friction that stops a tool
+# being used, so recent subjects are offered as numbers instead.
+DEFAULT_SUBJECTS = (
+    "Maths", "Science", "English", "History", "Geography", "Art",
+)
+
+
+def recent_subjects(limit: int = 6) -> list[str]:
+    """Subjects from past classes, most recent first, without duplicates."""
+    seen: list[str] = []
+    for session in store.list_sessions(limit=40):
+        title = (session.title or "").strip()
+        if title and title.lower() != "lecture" and title not in seen:
+            seen.append(title)
+        if len(seen) >= limit:
+            break
+    return seen
+
+
+def pick_subject() -> str:
+    """Choose the subject by number, with typing as the fallback."""
+    subjects = recent_subjects() or list(DEFAULT_SUBJECTS)
+
+    out("\n[bold]Which class is this?[/bold]")
+    for index, subject in enumerate(subjects, start=1):
+        marker = " [dim](last time)[/dim]" if index == 1 else ""
+        out(f"  [bold]{index}[/bold]. {subject}{marker}")
+    out("  [bold]0[/bold]. Something else [dim]— type the name[/dim]")
+
+    answer = ask("\nNumber (Enter = the first one): ", "1")
+    if answer == "0":
+        return ask("What is this class called? ", "").strip() or subjects[0]
+    try:
+        return subjects[int(answer) - 1]
+    except (ValueError, IndexError):
+        # Treat anything unrecognised as a typed subject name, which is what
+        # a student who ignored the numbers actually meant.
+        return answer if answer else subjects[0]
+
+
+def pick_class_length() -> int:
+    """How long the period is, in minutes. 0 means 'until I stop it'."""
+    choices = list(config.CLASS_LENGTH_CHOICES)
+    default_index = (
+        choices.index(config.DEFAULT_CLASS_MINUTES) + 1
+        if config.DEFAULT_CLASS_MINUTES in choices else 1
+    )
+
+    out("\n[bold]How long is this class?[/bold]")
+    for index, minutes in enumerate(choices, start=1):
+        marker = " [dim](usual)[/dim]" if index == default_index else ""
+        out(f"  [bold]{index}[/bold]. {minutes} minutes{marker}")
+    out(f"  [bold]{len(choices) + 1}[/bold]. Until I stop it myself")
+
+    answer = ask(f"\nNumber (Enter = {config.DEFAULT_CLASS_MINUTES} minutes): ", str(default_index))
+    try:
+        picked = int(answer)
+    except ValueError:
+        return config.DEFAULT_CLASS_MINUTES
+    if picked == len(choices) + 1:
+        return 0
+    if 1 <= picked <= len(choices):
+        return choices[picked - 1]
+    return config.DEFAULT_CLASS_MINUTES
+
+
 # --------------------------------------------------------------------------
 # Menu
 # --------------------------------------------------------------------------
@@ -252,17 +319,24 @@ def _cli(*argv: str) -> int:
 
 
 def _record(source: str) -> int:
-    title = ask("\nWhat is this lecture called? (Enter to skip): ", "")
+    title = pick_subject()
+    minutes = pick_class_length()
     argv = ["record", "--source", source, "--live-notes"]
     if title:
         argv += ["--title", title]
-    out("\n[dim]Recording starts now. Press Ctrl-C when the lecture ends.[/dim]")
+    if minutes:
+        argv += ["--minutes", str(minutes)]
+        out(f"\n[dim]Recording {title} for {minutes} minutes. "
+            "It stops by itself, or press Ctrl-C to stop sooner.[/dim]")
+    else:
+        out("\n[dim]Recording starts now. Press Ctrl-C when the class ends.[/dim]")
     return _cli(*argv)
 
 
 def _record_with_options() -> int:
     language = pick_language()
-    title = ask("\nWhat is this lecture called? (Enter to skip): ", "")
+    title = pick_subject()
+    minutes = pick_class_length()
     online = confirm("\nIs this an online lecture (Zoom/Teams/YouTube)?", default=False)
     argv = [
         "record",
@@ -272,7 +346,9 @@ def _record_with_options() -> int:
     ]
     if title:
         argv += ["--title", title]
-    out("\n[dim]Recording starts now. Press Ctrl-C when the lecture ends.[/dim]")
+    if minutes:
+        argv += ["--minutes", str(minutes)]
+    out("\n[dim]Recording starts now. Press Ctrl-C to stop sooner.[/dim]")
     return _cli(*argv)
 
 
@@ -309,18 +385,48 @@ def _check() -> int:
     return 0 if ok else 1
 
 
+def _catchup() -> int:
+    pending = store.pending_sessions()
+    if not pending:
+        out("[green]Nothing to catch up on.[/green] Every class already has notes.")
+        return 0
+    out(f"\n[bold]{len(pending)} class(es) still need notes.[/bold]")
+    for session in pending[:5]:
+        out(f"  • {session.title} [dim]{session.started_at.replace('T', ' ')[:16]}[/dim]")
+    if not confirm("\nWrite them now? This takes a while", default=True):
+        out("[dim]Left alone. Nothing was lost.[/dim]")
+        return 0
+    return _cli("catchup")
+
+
+def _record_later() -> int:
+    title = pick_subject()
+    minutes = pick_class_length()
+    argv = ["record", "--source", config.SOURCE_MIC, "--later"]
+    if title:
+        argv += ["--title", title]
+    if minutes:
+        argv += ["--minutes", str(minutes)]
+    out("\n[dim]Recording sound only, so the laptop stays cool and the battery "
+        "lasts. Write the notes afterwards from the menu.[/dim]")
+    return _cli(*argv)
+
+
 def options() -> list[Option]:
     return [
-        Option("1", "Record a lecture I am attending", "uses the microphone",
+        Option("1", "Record the class I am in", "uses the microphone",
                lambda: _record(config.SOURCE_MIC)),
-        Option("2", "Record an online lecture", "Zoom, Teams, YouTube",
+        Option("2", "Record an online class", "Zoom, Teams, YouTube",
                lambda: _record(config.SOURCE_SYSTEM)),
         Option("3", "Read my notes", "from a past lecture", _open_last),
         Option("4", "Write notes for a past lecture", "if they are missing", _make_notes),
         Option("5", "Save notes to a file", "to share or print", _save_to_file),
-        Option("6", "Record with more options", "language, title, source",
+        Option("6", "Write up everything I have not done", "after school", _catchup),
+        Option("7", "Record now, write notes later", "saves battery in class",
+               _record_later),
+        Option("8", "Record with more options", "language, title, source",
                _record_with_options),
-        Option("7", "Check that everything works", "microphone, notes writer", _check),
+        Option("9", "Check that everything works", "microphone, notes writer", _check),
     ]
 
 
@@ -341,6 +447,18 @@ def show_menu() -> int:
     for option in items:
         out(f"  [bold]{option.key}[/bold]. {option.label} [dim]— {option.hint}[/dim]")
     out("  [bold]q[/bold]. Quit")
+
+    # A class recorded with --later, or one that could not keep up, is easy to
+    # forget about. Say so here rather than letting it sit unnoticed.
+    try:
+        waiting = len(store.pending_sessions())
+    except Exception:
+        waiting = 0
+    if waiting:
+        out(
+            f"\n[yellow]{waiting} class(es) still need notes.[/yellow] "
+            "[dim]Pick 6 to write them up.[/dim]"
+        )
 
     answer = ask("\nWhat would you like to do? (Enter = 1, record now): ", "1").lower()
     if answer in ("q", "quit", "exit"):

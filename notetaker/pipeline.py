@@ -77,12 +77,15 @@ class RecordingPipeline:
         chunk_seconds: int = config.CHUNK_SECONDS,
         live_interval: int = config.LIVE_NOTES_INTERVAL_SECONDS,
         on_update: Callable[[PipelineState], None] | None = None,
+        transcribe: bool = True,
     ) -> None:
         self.source = source
         self.session = session
         self.model = model
         self.language = language
-        self.live_notes = live_notes
+        # Audio-only mode cannot show live notes: there is no transcript yet.
+        self.transcribe = transcribe
+        self.live_notes = live_notes and transcribe
         self.summary_model = summary_model
         self.live_interval = live_interval
         self.on_update = on_update
@@ -103,16 +106,17 @@ class RecordingPipeline:
     # -- lifecycle ------------------------------------------------------
     def start(self) -> None:
         # Load the model before recording so startup latency does not eat
-        # the first minute of the lecture.
-        self._transcriber = Transcriber(self.model, language=self.language)
+        # the first minute of the lecture. Audio-only mode skips this
+        # entirely, which is the point: no model, no CPU load, no hot laptop.
+        if self.transcribe:
+            self._transcriber = Transcriber(self.model, language=self.language)
         self.recorder.start()
 
-        asr = threading.Thread(target=self._transcribe_loop, name="asr", daemon=True)
-        self._asr_thread = asr
-        self._threads = [
-            asr,
-            threading.Thread(target=self._tick_loop, name="tick", daemon=True),
-        ]
+        self._threads = [threading.Thread(target=self._tick_loop, name="tick", daemon=True)]
+        if self.transcribe:
+            asr = threading.Thread(target=self._transcribe_loop, name="asr", daemon=True)
+            self._asr_thread = asr
+            self._threads.insert(0, asr)
         if self.live_notes:
             self._threads.append(
                 threading.Thread(target=self._live_notes_loop, name="live", daemon=True)
@@ -213,8 +217,12 @@ class RecordingPipeline:
                 on_disk = 0
             with self._lock:
                 self.state.elapsed = self.recorder.elapsed
+                # In audio-only mode nothing is meant to be transcribed yet, so
+                # untranscribed chunks are the plan, not a backlog.
                 # The newest chunk is still being written, so it is not backlog.
-                self.state.chunks_pending = max(on_disk - self.state.chunks_done - 1, 0)
+                self.state.chunks_pending = (
+                    max(on_disk - self.state.chunks_done - 1, 0) if self.transcribe else 0
+                )
                 if self.state.is_falling_behind:
                     self.state.warning = (
                         f"transcription is {self.state.chunks_pending} chunks behind; "

@@ -38,6 +38,19 @@ SOURCE_SYSTEM = "system"  # online lecture (Zoom/Teams/YouTube) via .monitor sou
 FFMPEG_BIN = "ffmpeg"
 FFPROBE_BIN = "ffprobe"
 
+# --------------------------------------------------------------------------
+# Class length
+# --------------------------------------------------------------------------
+# A school period is a known length, so recording can stop on its own. The
+# student presses one key at the start and does not have to remember to stop
+# at the bell. 0 means "record until Ctrl-C", which is what a lecture wants.
+DEFAULT_CLASS_MINUTES = 60
+CLASS_LENGTH_CHOICES = (30, 45, 50, 60, 90)
+
+# Keep recording a little past the scheduled end, because classes overrun and
+# the last thing said is usually the homework.
+CLASS_OVERRUN_SECONDS = 120
+
 # Grace period (seconds) to let ffmpeg finalize WAV headers after SIGINT
 # before escalating to kill. Never SIGKILL first: it corrupts the header.
 FFMPEG_STOP_TIMEOUT = 5.0

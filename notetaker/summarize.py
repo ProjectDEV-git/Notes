@@ -504,16 +504,34 @@ def summarize_segments(
     duration: float | None = None,
     window_seconds: int = config.MAP_WINDOW_SECONDS,
     progress=None,
+    premapped: tuple[list[str], list[str], int] | None = None,
 ) -> Notes:
-    """Run the full map-reduce over a transcript."""
+    """Run the map-reduce over a transcript.
+
+    `premapped` is `(key_points, admin_points, segments_covered)` from the
+    live-notes thread, which already MAPped most of the class while it was
+    being taught. Reusing it means only the uncovered tail is mapped after the
+    bell, so an hour-long class produces notes in a couple of minutes instead
+    of re-doing twenty model calls the student already paid for.
+    """
     if not segments:
         raise SummarizerError("transcript is empty, nothing to summarize")
 
     language = language or segments[0].lang or "en"
-    windows = build_windows(segments, window_seconds)
 
     key_points: list[str] = []
     admin_points: list[str] = []
+    covered = 0
+    if premapped:
+        live_keys, live_admins, covered = premapped
+        # Guard against a stale count: never skip more than we actually have.
+        covered = max(0, min(covered, len(segments)))
+        key_points.extend(live_keys)
+        admin_points.extend(live_admins)
+
+    # Only the segments the live pass never saw still need mapping.
+    windows = build_windows(segments[covered:], window_seconds)
+
     # Ground against the whole transcript: a point made in one window often
     # draws on wording from an adjacent one, and should not be discarded.
     full_transcript = " ".join(s.text for s in segments)
@@ -530,8 +548,9 @@ def summarize_segments(
     key_points = dedupe_points(key_points)
     admin_points = dedupe_points(admin_points)
 
-    # Short lectures need no second pass: one window is already consolidated.
-    if len(windows) > 1:
+    # One window and nothing reused is already consolidated; a second pass adds
+    # nothing. Anything larger, including reused live points, needs reducing.
+    if len(windows) + (1 if covered else 0) > 1:
         body = reduce_points(key_points + [f"ADMIN: {p}" for p in admin_points], language, model)
         # The reduce stage may invent plausible-sounding points that nobody
         # said. Keep only what the mapped points actually support.

@@ -114,11 +114,15 @@ def cmd_devices(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------
 # record
 # --------------------------------------------------------------------------
-def _render_live(state, source_label: str, live_notes: bool):
+def _render_live(state, source_label: str, live_notes: bool, remaining: float | None = None):
     """Build the live display for a recording in progress."""
     header = Text()
     header.append("● REC ", style="bold red")
     header.append(format_duration(state.elapsed), style="bold")
+    if remaining is not None:
+        # A student wants to know the class is still being recorded and how
+        # much is left, without doing arithmetic during a lesson.
+        header.append(f"  ({format_duration(max(remaining, 0))} left)", style="bold cyan")
     header.append(f"   {source_label}", style="dim")
     if state.language:
         header.append(f"   lang={state.language}", style="dim")
@@ -163,7 +167,11 @@ def cmd_record(args: argparse.Namespace) -> int:
     except AudioError as exc:
         return fail(str(exc))
 
-    if args.live_notes and not summarize.ollama_available():
+    later = getattr(args, "later", False)
+    if later:
+        # Nothing is transcribed during class, so live notes cannot exist.
+        args.live_notes = False
+    elif args.live_notes and not summarize.ollama_available():
         echo("[yellow]warning:[/yellow] Ollama is not running, live notes disabled")
         args.live_notes = False
 
@@ -179,9 +187,13 @@ def cmd_record(args: argparse.Namespace) -> int:
         live_notes=args.live_notes,
         summary_model=args.summary_model,
         chunk_seconds=args.chunk_seconds,
+        transcribe=not later,
     )
 
-    echo(f"[dim]loading {args.model} model...[/dim]")
+    if later:
+        echo("[dim]recording sound only. Write the notes afterwards with: notes catchup[/dim]")
+    else:
+        echo(f"[dim]loading {args.model} model...[/dim]")
     try:
         pipeline.start()
     except (AudioError, ValueError) as exc:
@@ -194,16 +206,36 @@ def cmd_record(args: argparse.Namespace) -> int:
 
     signal.signal(signal.SIGINT, handle_interrupt)
 
+    # A school period has a known length, so the recording can end on its own
+    # and the student never has to remember to stop it. Ctrl-C still works.
+    minutes = max(getattr(args, "minutes", 0) or 0, 0)
+    limit = minutes * 60 + config.CLASS_OVERRUN_SECONDS if minutes else None
+
+    def remaining() -> float | None:
+        return None if limit is None else limit - pipeline.state.elapsed
+
     label = f"{source.description} ({'system audio' if source.kind == config.SOURCE_SYSTEM else 'microphone'})"
+    if limit is not None:
+        echo(
+            f"[dim]recording for {minutes} minutes, then stopping by itself "
+            f"(plus {config.CLASS_OVERRUN_SECONDS // 60} min in case the class runs over). "
+            "Ctrl-C stops it sooner.[/dim]"
+        )
     try:
         if HAVE_RICH and not args.plain:
             with Live(console=console, refresh_per_second=4, transient=False) as live:
                 while not stopping.is_set():
-                    live.update(_render_live(pipeline.state, label, args.live_notes))
+                    left = remaining()
+                    if left is not None and left <= 0:
+                        break
+                    live.update(_render_live(pipeline.state, label, args.live_notes, left))
                     stopping.wait(0.25)
         else:
             echo(f"recording from {label}. Press Ctrl-C to stop.")
             while not stopping.is_set():
+                left = remaining()
+                if left is not None and left <= 0:
+                    break
                 stopping.wait(1.0)
     finally:
         pending = pipeline.state.chunks_pending
@@ -214,11 +246,28 @@ def cmd_record(args: argparse.Namespace) -> int:
             )
         else:
             echo("\n[dim]finishing up, transcribing the last chunk...[/dim]")
-        pipeline.stop()
+        drained = pipeline.stop()
         duration = pipeline.finish()
+        if not drained:
+            # The chunks are still on disk, so this is recoverable. Say so
+            # rather than leaving the student thinking the class was lost.
+            echo(
+                f"[yellow]transcription did not finish in time[/yellow] "
+                f"({pipeline.state.undrained_chunks} chunks left). Nothing is lost.\n"
+                f"[dim]Finish it later with:  notes catchup[/dim]"
+            )
 
     segments = store.load_transcript(session)
     echo(f"[green]saved[/green] {len(segments)} segments · {format_duration(duration)} · {session.id}")
+
+    if later:
+        # Expected: nothing was transcribed on purpose. The audio is the record.
+        echo(
+            f"[green]sound saved[/green] for {session.title}. "
+            "Nothing has been transcribed yet.\n"
+            "[dim]Write the notes when you have time:  notes catchup[/dim]"
+        )
+        return 0
 
     if not segments:
         echo("[yellow]no speech detected, skipping summary[/yellow]")
@@ -228,13 +277,28 @@ def cmd_record(args: argparse.Namespace) -> int:
         echo(f"[dim]run: notetaker summarize {session.id}[/dim]")
         return 0
 
-    return _summarize_session(session, model=args.summary_model)
+    # The live-notes thread already summarized most of the class while it was
+    # happening. Reuse that instead of paying for the same model calls twice.
+    state = pipeline.state
+    premapped = None
+    if state.live_consumed:
+        premapped = (
+            list(state.live_key_points),
+            list(state.live_admin_points),
+            state.live_consumed,
+        )
+    return _summarize_session(session, model=args.summary_model, premapped=premapped)
 
 
 # --------------------------------------------------------------------------
 # summarize
 # --------------------------------------------------------------------------
-def _summarize_session(session: store.Session, model: str, quiet: bool = False) -> int:
+def _summarize_session(
+    session: store.Session,
+    model: str,
+    quiet: bool = False,
+    premapped: tuple[list[str], list[str], int] | None = None,
+) -> int:
     segments = store.load_transcript(session)
     if not segments:
         return fail(f"session {session.id} has no transcript")
@@ -250,6 +314,12 @@ def _summarize_session(session: store.Session, model: str, quiet: bool = False) 
         if not quiet:
             echo(f"[dim]summarizing window {index}/{total}...[/dim]")
 
+    if premapped and premapped[2]:
+        echo(
+            f"[dim]reusing the notes taken during class "
+            f"({premapped[2]} of {len(segments)} parts already done)[/dim]"
+        )
+
     try:
         notes = summarize.summarize_segments(
             segments,
@@ -258,6 +328,7 @@ def _summarize_session(session: store.Session, model: str, quiet: bool = False) 
             model=model,
             duration=session.duration,
             progress=progress,
+            premapped=premapped,
         )
     except summarize.SummarizerError as exc:
         return fail(str(exc))
@@ -297,6 +368,70 @@ def cmd_summarize(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------
 # list / show / export
 # --------------------------------------------------------------------------
+def cmd_catchup(args: argparse.Namespace) -> int:
+    """Finish every class that was recorded but never written up.
+
+    This is the other half of `record --later`, and the safety net for a class
+    where transcription could not keep up. It is deliberately a separate step:
+    it is slow and CPU-heavy, and the right time to run it is after school,
+    not between periods.
+    """
+    pending = store.pending_sessions()
+    if not pending:
+        echo("[green]Nothing to catch up on.[/green] Every class has notes.")
+        return 0
+
+    if args.limit:
+        pending = pending[: args.limit]
+
+    echo(f"[bold]{len(pending)} class(es) to write up.[/bold] This takes a while.\n")
+    if not summarize.ollama_available():
+        return fail(
+            "Ollama is not running, so notes cannot be written. "
+            "Start it with 'ollama serve', then run: notes catchup"
+        )
+
+    failed = 0
+    for index, session in enumerate(pending, start=1):
+        echo(f"[bold]({index}/{len(pending)})[/bold] {session.title} [dim]{session.id}[/dim]")
+
+        segments = store.load_transcript(session)
+        if not segments:
+            if not session.audio_path.exists():
+                echo("  [yellow]no sound and no transcript, skipping[/yellow]")
+                failed += 1
+                continue
+            echo(f"  [dim]transcribing the recording ({args.model})...[/dim]")
+            try:
+                transcriber = Transcriber(args.model, language=session.language)
+                segments = transcriber.transcribe_file(session.audio_path)
+                with TranscriptWriter(session.transcript_path) as writer:
+                    writer.write(segments)
+                # A session recorded with --later has no detected language yet.
+                store.finish_session(
+                    session.id,
+                    duration=session.duration,
+                    language=transcriber.language,
+                )
+                session = store.get_session(session.id) or session
+            except Exception as exc:
+                echo(f"  [red]could not transcribe:[/red] {exc}")
+                failed += 1
+                continue
+            echo(f"  [dim]{len(segments)} segments[/dim]")
+
+        if _summarize_session(session, model=args.summary_model, quiet=True) != 0:
+            failed += 1
+            continue
+        echo(f"  [green]notes written[/green] {session.notes_path}\n")
+
+    done = len(pending) - failed
+    echo(f"[green]finished {done} of {len(pending)}.[/green]")
+    if failed:
+        echo("[dim]The ones that failed still have their sound and transcript.[/dim]")
+    return 0 if not failed else 1
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     sessions = store.list_sessions(limit=args.limit)
     if not sessions:
@@ -517,6 +652,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record.add_argument("--title", "-t", default=None, help="lecture title")
     record.add_argument(
+        "--minutes", "-m", type=int, default=0,
+        help="stop by itself after this many minutes (a class period). "
+             "0 = keep recording until Ctrl-C",
+    )
+    record.add_argument(
         "--live-notes", action="store_true",
         help="show key ideas while recording (extra CPU load)",
     )
@@ -529,10 +669,25 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--summary-model", default=config.SUMMARY_MODEL, help="Ollama model")
     record.add_argument("--chunk-seconds", type=int, default=config.CHUNK_SECONDS)
     record.add_argument("--no-summary", action="store_true", help="transcribe only")
+    record.add_argument(
+        "--later", action="store_true",
+        help="just record the sound; transcribe and write the notes later with "
+             "'notes catchup'. Uses far less battery during class",
+    )
     record.add_argument("--plain", action="store_true", help="disable the live display")
 
     listing = subparsers.add_parser("list", help="list past recordings")
     listing.add_argument("--limit", "-n", type=int, default=20)
+
+    catchup = subparsers.add_parser(
+        "catchup", help="write notes for every class that does not have them yet"
+    )
+    catchup.add_argument(
+        "--limit", "-n", type=int, default=0,
+        help="only do this many classes (0 = all of them)",
+    )
+    catchup.add_argument("--model", default=config.ASR_MODEL, help="whisper model")
+    catchup.add_argument("--summary-model", default=config.SUMMARY_MODEL)
 
     show = subparsers.add_parser("show", help="show notes for a recording")
     show.add_argument("session", help="session id or part of the title")
@@ -576,6 +731,7 @@ COMMANDS = {
     "check": cmd_check,
     "devices": cmd_devices,
     "record": cmd_record,
+    "catchup": cmd_catchup,
     "list": cmd_list,
     "show": cmd_show,
     "summarize": cmd_summarize,

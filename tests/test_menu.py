@@ -38,6 +38,11 @@ def _tty():
     return patch.object(sys.stdin, "isatty", lambda: True)
 
 
+def _no_pending():
+    """No classes awaiting notes, so the launch reminder stays quiet."""
+    return patch("notetaker.store.pending_sessions", lambda: [])
+
+
 # ------------------------------------------------------------------ prompts
 def test_enter_accepts_the_default():
     """Enter must always be a valid answer, or the menu is a dead end."""
@@ -111,7 +116,9 @@ def test_language_defaults_to_autodetect():
 # --------------------------------------------------------------------- menu
 def test_bare_enter_records_a_lecture():
     """The single most likely action must need zero knowledge."""
-    with _tty(), _answers("", ""), patch("notetaker.cli.main", return_value=0) as cli:
+    # menu choice, subject, class length: Enter is valid for all three.
+    with _tty(), _no_pending(), _answers("", "", ""), \
+            patch("notetaker.cli.main", return_value=0) as cli:
         assert menu.main() == 0
     argv = cli.call_args[0][0]
     assert argv[0] == "record"
@@ -119,22 +126,30 @@ def test_bare_enter_records_a_lecture():
 
 
 def test_online_lecture_option_uses_system_audio():
-    with _tty(), _answers("2", ""), patch("notetaker.cli.main", return_value=0) as cli:
+    with _tty(), _no_pending(), _answers("2", "", ""), \
+            patch("notetaker.cli.main", return_value=0) as cli:
         menu.main()
     assert config.SOURCE_SYSTEM in cli.call_args[0][0]
 
 
 def test_a_typed_title_is_passed_through():
-    with _tty(), _answers("1", "Physics week 4"), patch("notetaker.cli.main", return_value=0) as cli:
+    """A subject that is not on the list can still be typed."""
+    with _tty(), _no_pending(), _answers("1", "0", "Physics week 4", ""), \
+            patch("notetaker.cli.main", return_value=0) as cli:
         menu.main()
     argv = cli.call_args[0][0]
     assert argv[argv.index("--title") + 1] == "Physics week 4"
 
 
-def test_skipping_the_title_does_not_pass_an_empty_one():
-    with _tty(), _answers("1", ""), patch("notetaker.cli.main", return_value=0) as cli:
+def test_an_empty_subject_is_never_passed_through():
+    """Pressing Enter past every prompt must not produce --title ''."""
+    with _tty(), _no_pending(), _answers("1", "0", "", ""), \
+            patch("notetaker.cli.main", return_value=0) as cli:
         menu.main()
-    assert "--title" not in cli.call_args[0][0]
+    argv = cli.call_args[0][0]
+    assert "" not in argv
+    if "--title" in argv:
+        assert argv[argv.index("--title") + 1].strip()
 
 
 def test_quit_changes_nothing():
