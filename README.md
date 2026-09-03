@@ -1,13 +1,17 @@
 # NoteTaker
 
-Records a lecture, transcribes it, and writes down **the key ideas only**.
+Records a class, transcribes it, and writes down **the key ideas only**.
 
-Works for both kinds of lecture:
+Built for a normal school day: a period has a known length, so recording
+**stops by itself at the end**, and the notes are written for a secondary
+school student, defining new words instead of assuming them.
+
+Works for both kinds of class:
 
 - **In person** — captures your microphone
 - **Online** (Zoom, Teams, YouTube) — captures your system audio
 
-Handles **English and Thai** out of the box, and a Thai lecture produces Thai
+Handles **English and Thai** out of the box, and a Thai class produces Thai
 notes. [Adding another language](docs/LANGUAGES.md) takes about a minute:
 
 ```bash
@@ -28,35 +32,62 @@ notes            # opens a menu: pick a number, press Enter
 ```
 
 ```
-  1. Record a lecture I am attending — uses the microphone
-  2. Record an online lecture — Zoom, Teams, YouTube
+  1. Record the class I am in — uses the microphone
+  2. Record an online class — Zoom, Teams, YouTube
   3. Read my notes — from a past lecture
   4. Write notes for a past lecture — if they are missing
   5. Save notes to a file — to share or print
-  6. Record with more options — language, title, source
-  7. Check that everything works — microphone, notes writer
+  6. Write up everything I have not done — after school
+  7. Record now, write notes later — saves battery in class
+  8. Record with more options — language, title, source
+  9. Check that everything works — microphone, notes writer
 ```
 
-Pressing Enter records straight away, which is what you want most of the time.
-Every action prints the command it ran, so you can skip the menu later:
+It asks which subject, and how long the class is. Enter is a valid answer to
+both. Every action prints the command it ran, so you can skip the menu later:
 
 ```bash
-notes now        # record this lecture now (microphone)
-notes online     # record an online lecture (Zoom/Teams/YouTube)
-notes last       # show the notes from your last lecture
-notes all        # list every lecture
+notes class      # record a class; stops by itself after 60 minutes
+notes later      # record the sound only; write the notes after school
+notes catchup    # write notes for every class that does not have them yet
+notes now        # record until you press Ctrl-C (a long lecture)
+notes online     # record an online class (Zoom/Teams/YouTube)
+notes last       # show the notes from your last class
+notes all        # list every class
 notes check      # confirm your microphone and notes writer work
 ```
 
-Press **Ctrl-C** to stop. It transcribes the last chunk, then prints and saves
-the key ideas. Key ideas also appear live while you record.
+`notes class` **stops on its own** two minutes after the period ends, because
+classes overrun and the homework is usually the last thing said. Ctrl-C always
+stops sooner. Key ideas also appear live while you record.
+
+If your periods are not 60 minutes:
+
+```bash
+NOTES_CLASS_MINUTES=45 notes class
+```
+
+### A whole day of classes
+
+Transcribing while you record makes the laptop work hard. For back-to-back
+periods, record the sound only and write everything up once you are home:
+
+```bash
+notes later      # in each class: no model runs, battery lasts
+notes catchup    # after school: transcribes and writes up everything
+```
+
+`notes catchup` is also the recovery path. If Ollama was not running, or
+transcription could not keep up, the class is picked up here rather than lost.
+The menu tells you when classes are waiting.
 
 Anything else is passed to the full CLI:
 
 ```bash
-notes record --title "Physics week 4" --lang th
+notes record --title "Physics week 4" --lang th --minutes 50
 notes summarize physics --hq
 notes export physics -o notes.md
+notes summarize physics --rerun --level university   # denser wording
 ```
 
 `<id>` can be part of the title, so `notes show thermo` works.
@@ -69,14 +100,37 @@ notetaker devices                      # which mic / system-audio sources exist
 notetaker menu                         # the numbered menu
 notetaker check                        # verify audio devices and Ollama
 notetaker record [--source mic|system] [--title T] [--live-notes] [--lang auto|en|th]
+               [--minutes N]           # stop by itself after N minutes
+               [--later]               # record sound only, write notes later
+               [--level school|university]
+notetaker catchup [--limit N]          # write up every class still missing notes
 notetaker list                         # past recordings
 notetaker show <id> [--transcript]
-notetaker summarize <id> [--rerun] [--hq]
+notetaker summarize <id> [--rerun] [--hq] [--level school|university]
 notetaker export <id> [--md|--txt] [-o FILE]
 notetaker lang list|add|edit|remove    # languages your notes are written in
 ```
 
 </details>
+
+## Who the notes are written for
+
+By default the notes are written for a **secondary school student**: short
+sentences, plain words, and every new term defined where the teacher
+introduced it. The admin section is called *Homework & reminders*.
+
+The facts do not change with the level. Numbers, units and formulas are copied
+exactly at both settings, and inventing homework that was never set is
+forbidden at both.
+
+```bash
+notes summarize physics --rerun --level university   # denser, assumes more
+export NOTETAKER_NOTES_LEVEL=university              # make it the default
+```
+
+Adding a language? A pack can carry its own school prompts (`map_school`,
+`reduce_school`). A pack without them simply uses its normal prompts, so
+nothing you have already written needs changing.
 
 ## Languages
 
@@ -225,15 +279,21 @@ after class. Transcription itself happens live.
 ## Known limitations
 
 - **Thai transcription runs ~5x slower than real time** on this CPU, so it
-  cannot keep up live. Nothing is lost (chunks queue on disk), but expect a wait
-  after stopping. English is fine live.
+  cannot keep up live. Nothing is lost: the chunks queue on disk, and if the
+  wait after stopping is still not enough they are kept for `notes catchup`.
+  For a full Thai class, `notes later` is the better choice. English is fine
+  live.
 - **For Thai, prefer `--hq`.** `large-v3-turbo` costs no extra time over `small`
   on Thai and is noticeably more accurate.
 - **Thai summaries occasionally invent a term.** Observed "Kleorophil pars" in
   place of a real word. Check anything that matters against the transcript.
 - **System audio captures everything you can hear.** Mute unrelated tabs before
-  recording an online lecture, or you will get their content in your notes.
-- Summarizing is CPU-bound and will make the laptop warm.
+  recording an online class, or you will get their content in your notes.
+- Summarizing is CPU-bound and will make the laptop warm. For back-to-back
+  periods use `notes later` and run `notes catchup` once, after school.
+- **Recordings are never deleted.** A one-hour class keeps about 115 MB of
+  audio so `--hq` re-runs stay possible. Delete old sessions yourself from
+  `~/.local/share/notetaker/sessions/` if space runs short.
 - **macOS needs a loopback driver for online lectures.** BlackHole or similar;
   see Install. In-person recording works with no extra setup.
 - Linux and macOS only. Windows is not supported.

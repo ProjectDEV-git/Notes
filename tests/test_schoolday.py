@@ -12,6 +12,10 @@ university lectures:
 
 from __future__ import annotations
 
+import os
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from notetaker import cli, config, store, summarize as S
@@ -279,3 +283,60 @@ def test_catchup_without_ollama_keeps_everything(db, monkeypatch):
     assert cli.main(["catchup"]) != 0
     assert session.transcript_path.exists()
     assert session.audio_path.exists()
+
+
+# ------------------------------------------------- the one-word launcher
+LAUNCHER = Path(__file__).resolve().parent.parent / "scripts" / "notes"
+
+
+def _dispatch(verb: str, env: dict | None = None) -> str:
+    """What CLI command does `notes <verb>` actually run?
+
+    The launcher is the surface a student touches, so a typo in it is a
+    broken feature no Python test would catch.
+    """
+    traced = LAUNCHER.read_text().replace(
+        'exec "$PY" -m notetaker.cli', "echo CLI"
+    )
+    script = LAUNCHER.parent / "_traced_notes"
+    script.write_text(traced)
+    try:
+        result = subprocess.run(
+            ["bash", str(script), verb],
+            capture_output=True, text=True,
+            env={**os.environ, **(env or {})},
+        )
+    finally:
+        script.unlink(missing_ok=True)
+    return result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+
+
+def test_launcher_is_valid_shell():
+    assert subprocess.run(["bash", "-n", str(LAUNCHER)]).returncode == 0
+
+
+def test_notes_class_stops_by_itself():
+    command = _dispatch("class")
+    assert "--minutes" in command
+    assert str(config.DEFAULT_CLASS_MINUTES) in command
+
+
+def test_notes_class_length_can_be_changed():
+    command = _dispatch("class", {"NOTES_CLASS_MINUTES": "45"})
+    assert "--minutes 45" in command
+
+
+def test_notes_later_records_sound_only():
+    command = _dispatch("later")
+    assert "--later" in command
+    assert "--live-notes" not in command, "--later must not run the model in class"
+
+
+def test_notes_catchup_reaches_the_catchup_command():
+    assert _dispatch("catchup").endswith("catchup")
+
+
+def test_notes_now_still_records_until_stopped():
+    """The old behaviour must survive: a lecture has no fixed length."""
+    command = _dispatch("now")
+    assert "--minutes" not in command

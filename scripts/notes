@@ -4,6 +4,9 @@
 #   notes            open the menu (nothing to remember)
 #   notes now        start recording straight away (microphone)
 #   notes online     record an online lecture (Zoom/Teams/YouTube)
+#   notes class      record a normal class, stopping at the end by itself
+#   notes later      record the sound only, write the notes after school
+#   notes catchup    write notes for every class that does not have them
 #   notes last       show the notes from the most recent lecture
 #   notes all        list every lecture
 #   notes check      confirm the microphone and notes writer work
@@ -40,9 +43,25 @@ case "${1-}" in
     "")
         run menu
         ;;
-    now|start|record|go|mic|class|lecture)
+    now|start|record|go|mic|lecture)
         shift
         run record --source mic --live-notes "$@"
+        ;;
+    # A normal school period: stops by itself at the end, so nobody has to
+    # remember to press anything while packing up.
+    class|period|lesson)
+        shift
+        run record --source mic --live-notes --minutes "${NOTES_CLASS_MINUTES:-60}" "$@"
+        ;;
+    # Record the sound only. No model runs during the lesson, so the laptop
+    # stays cool and the battery lasts a whole day of classes.
+    later|quick|save)
+        shift
+        run record --source mic --later --minutes "${NOTES_CLASS_MINUTES:-60}" "$@"
+        ;;
+    catchup|writeup|finish|homework)
+        shift
+        run catchup "$@"
         ;;
     online|zoom|teams|system|meet|youtube)
         shift
@@ -68,14 +87,18 @@ case "${1-}" in
     help|-h|--help)
         cat <<'EOF'
 notes            open the menu - pick what you want from a list
-notes now        record this lecture now (microphone)
-notes online     record an online lecture (Zoom/Teams/YouTube)
-notes last       show the notes from your last lecture
-notes all        list every lecture
+notes class      record a class; stops by itself after 60 minutes
+notes later      record the sound only; write the notes after school
+notes catchup    write notes for every class that does not have them yet
+notes now        record until you press Ctrl-C (a long lecture)
+notes online     record an online class (Zoom/Teams/YouTube)
+notes last       show the notes from your last class
+notes all        list every class
 notes check      confirm the microphone and notes writer work
 notes lang       add or list note languages
 
-Press Ctrl-C to stop recording. Notes are written automatically.
+'notes class' stops on its own. Ctrl-C always stops sooner.
+Set a different class length with:  NOTES_CLASS_MINUTES=45 notes class
 
 Anything else is passed to the full CLI, for example:
   notes record --title "Physics week 4" --lang th
