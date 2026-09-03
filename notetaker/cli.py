@@ -188,6 +188,7 @@ def cmd_record(args: argparse.Namespace) -> int:
         summary_model=args.summary_model,
         chunk_seconds=args.chunk_seconds,
         transcribe=not later,
+        level=getattr(args, "level", None),
     )
 
     if later:
@@ -287,7 +288,10 @@ def cmd_record(args: argparse.Namespace) -> int:
             list(state.live_admin_points),
             state.live_consumed,
         )
-    return _summarize_session(session, model=args.summary_model, premapped=premapped)
+    return _summarize_session(
+        session, model=args.summary_model, premapped=premapped,
+        level=getattr(args, "level", None),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -298,6 +302,7 @@ def _summarize_session(
     model: str,
     quiet: bool = False,
     premapped: tuple[list[str], list[str], int] | None = None,
+    level: str | None = None,
 ) -> int:
     segments = store.load_transcript(session)
     if not segments:
@@ -329,6 +334,7 @@ def _summarize_session(
             duration=session.duration,
             progress=progress,
             premapped=premapped,
+            level=level,
         )
     except summarize.SummarizerError as exc:
         return fail(str(exc))
@@ -362,7 +368,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
             writer.write(segments)
         echo(f"[dim]{len(segments)} segments[/dim]")
 
-    return _summarize_session(session, model=args.model)
+    return _summarize_session(session, model=args.model, level=getattr(args, "level", None))
 
 
 # --------------------------------------------------------------------------
@@ -420,7 +426,10 @@ def cmd_catchup(args: argparse.Namespace) -> int:
                 continue
             echo(f"  [dim]{len(segments)} segments[/dim]")
 
-        if _summarize_session(session, model=args.summary_model, quiet=True) != 0:
+        if _summarize_session(
+            session, model=args.summary_model, quiet=True,
+            level=getattr(args, "level", None),
+        ) != 0:
             failed += 1
             continue
         echo(f"  [green]notes written[/green] {session.notes_path}\n")
@@ -667,6 +676,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record.add_argument("--model", default=config.ASR_MODEL, help="whisper model")
     record.add_argument("--summary-model", default=config.SUMMARY_MODEL, help="Ollama model")
+    record.add_argument(
+        "--level", default=config.NOTES_LEVEL, choices=list(config.NOTES_LEVELS),
+        help="who the notes are written for. Default: school",
+    )
     record.add_argument("--chunk-seconds", type=int, default=config.CHUNK_SECONDS)
     record.add_argument("--no-summary", action="store_true", help="transcribe only")
     record.add_argument(
@@ -688,6 +701,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     catchup.add_argument("--model", default=config.ASR_MODEL, help="whisper model")
     catchup.add_argument("--summary-model", default=config.SUMMARY_MODEL)
+    catchup.add_argument(
+        "--level", default=config.NOTES_LEVEL, choices=list(config.NOTES_LEVELS),
+    )
 
     show = subparsers.add_parser("show", help="show notes for a recording")
     show.add_argument("session", help="session id or part of the title")
@@ -701,6 +717,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"re-transcribe with {config.ASR_MODEL_HQ} first (slow, better for Thai)",
     )
     summarize_cmd.add_argument("--model", default=config.SUMMARY_MODEL)
+    summarize_cmd.add_argument(
+        "--level", default=config.NOTES_LEVEL, choices=list(config.NOTES_LEVELS),
+        help="who the notes are written for. Default: school",
+    )
 
     export = subparsers.add_parser("export", help="write notes or transcript to a file")
     export.add_argument("session", help="session id or part of the title")

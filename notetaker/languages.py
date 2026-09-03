@@ -46,10 +46,30 @@ class Language:
     # dedupe and grounding checks can fall back to character n-grams.
     script_range: tuple[str, str] | None = None
     none_markers: set[str] = field(default_factory=set)
+    # Optional school-register variants. A pack without these simply uses the
+    # normal prompts, so packs written before this existed keep working.
+    map_prompt_school: str | None = None
+    reduce_prompt_school: str | None = None
+    action_heading_school: str | None = None
 
     @property
     def is_unspaced(self) -> bool:
         return self.script_range is not None
+
+    def prompts(self, level: str = "school") -> dict[str, str]:
+        """Map and reduce prompts for a reading level, falling back safely."""
+        if level == "school":
+            return {
+                "map": self.map_prompt_school or self.map_prompt,
+                "reduce": self.reduce_prompt_school or self.reduce_prompt,
+            }
+        return {"map": self.map_prompt, "reduce": self.reduce_prompt}
+
+    def heading_for_actions(self, level: str = "school") -> str:
+        """What to call the homework/deadlines section at this level."""
+        if level == "school" and self.action_heading_school:
+            return self.action_heading_school
+        return self.action_heading
 
     def contains_script(self, text: str) -> bool:
         if not self.script_range:
@@ -67,6 +87,12 @@ class Language:
             },
             "prompts": {"map": self.map_prompt, "reduce": self.reduce_prompt},
         }
+        if self.action_heading_school:
+            data["headings"]["action_items_school"] = self.action_heading_school
+        if self.map_prompt_school:
+            data["prompts"]["map_school"] = self.map_prompt_school
+        if self.reduce_prompt_school:
+            data["prompts"]["reduce_school"] = self.reduce_prompt_school
         if self.script_range:
             data["script_range"] = list(self.script_range)
         if self.none_markers:
@@ -88,6 +114,14 @@ class Language:
 
         headings = data.get("headings") or {}
         script = data.get("script_range")
+        for key in ("map_school", "reduce_school"):
+            # Optional, but if present it must still say where the transcript
+            # goes, or the pack would silently produce empty notes.
+            if prompts.get(key) and "{text}" not in prompts[key]:
+                raise ValueError(
+                    f"language {code!r}: the {key} prompt must contain "
+                    "{text}, which is where the transcript is inserted"
+                )
         return cls(
             code=code,
             name=data.get("name", code),
@@ -98,6 +132,9 @@ class Language:
             action_heading=headings.get("action_items", "## Action items"),
             script_range=(script[0], script[1]) if script else None,
             none_markers=set(data.get("none_markers", [])),
+            map_prompt_school=prompts.get("map_school"),
+            reduce_prompt_school=prompts.get("reduce_school"),
+            action_heading_school=headings.get("action_items_school"),
         )
 
 
@@ -187,18 +224,122 @@ _THAI_REDUCE = (
     "บรรทัด:\n{text}"
 )
 
+# --------------------------------------------------------------------------
+# School register.
+#
+# The same lesson, written for a 14-year-old rather than a postgraduate. The
+# facts must be identical: this changes how they are worded, not what is kept.
+# Every new term gets a plain-language definition, because a school student is
+# meeting the vocabulary for the first time and cannot look past an unexplained
+# word the way a specialist can.
+# --------------------------------------------------------------------------
+_ENGLISH_MAP_SCHOOL = (
+    "You are helping a secondary school student who missed part of a lesson.\n"
+    "Below is part of the class recording, typed out automatically, so it may "
+    "contain small mistakes.\n\n"
+    "Write the 2-4 most important things taught in this part.\n\n"
+    "Rules:\n"
+    "- Output ONLY bullet lines starting with '- '. No introduction, no headings.\n"
+    "- Write in plain, clear English a 14-year-old reads easily. Short "
+    "sentences. No jargon unless the teacher used it.\n"
+    "- If the teacher uses a new or difficult word, write it as "
+    "'**word** — what it means in simple words'.\n"
+    "- KEEP the exact details: numbers, units, formulas, names, dates. "
+    "'A 15 kg box lifted 1 m gains about 150 J of energy' is useful; "
+    "'the teacher talked about energy' is not.\n"
+    "- Write what was TAUGHT, not what the teacher did. Never start a bullet "
+    "with 'The teacher' or 'The class'.\n"
+    "- Skip register, greetings, jokes, off-topic chat, and repetition.\n"
+    "- Start any homework, test date, deadline, or 'bring this next lesson' "
+    "with 'ADMIN: '.\n"
+    "- If this part has no real teaching in it, output nothing at all.\n\n"
+    "Class recording:\n{text}"
+)
+
+_ENGLISH_REDUCE_SCHOOL = (
+    "Below are notes taken during one school lesson.\n"
+    "Tidy them into revision notes the student can use before a test. This is "
+    "TIDYING UP: you are sorting lines that already exist, not writing new ones.\n\n"
+    "Use ONLY these headings:\n"
+    "## What we learned\n"
+    "## Words to know\n"
+    "## Homework & reminders\n\n"
+    "Rules:\n"
+    "- Every bullet must come from the lines below. Keep their numbers, units "
+    "and formulas exactly as written.\n"
+    "- NEVER make anything up. If it is not in the lines below, leave it out. "
+    "Inventing homework that was never set is a serious mistake.\n"
+    "- Keep the wording simple and direct, so it is easy to revise from.\n"
+    "- Drop vague filler that says nothing, such as 'this topic is important'.\n"
+    "- Where two lines say the same thing, keep the clearer one.\n"
+    "- Lines marked ADMIN go under 'Homework & reminders', without the word ADMIN.\n"
+    "- Lines shaped like '**word** — meaning' go under 'Words to know'.\n"
+    "- Everything else goes under 'What we learned', in the order it was taught.\n"
+    "- LEAVE OUT any heading with nothing under it. Never write 'None'.\n\n"
+    "Lines:\n{text}"
+)
+
+_THAI_MAP_SCHOOL = (
+    "คุณกำลังช่วยนักเรียนมัธยมที่พลาดการเรียนบางส่วนไป\n"
+    "ด้านล่างคือบางส่วนของคาบเรียนที่ถอดเสียงด้วยระบบอัตโนมัติ "
+    "จึงอาจมีคำผิดบ้าง\n\n"
+    "เขียนสิ่งที่สอนในส่วนนี้ ที่สำคัญที่สุด 2-4 ข้อ\n\n"
+    "กฎ:\n"
+    "- ตอบเป็นบรรทัดบูลเล็ตขึ้นต้นด้วย '- ' เท่านั้น ห้ามมีคำนำหรือหัวข้อ\n"
+    "- ใช้ภาษาง่ายๆ ที่นักเรียนอายุ 14 ปีอ่านเข้าใจทันที ประโยคสั้น\n"
+    "- ถ้าครูใช้คำศัพท์ใหม่หรือคำยาก ให้เขียนว่า "
+    "'**คำศัพท์** — ความหมายแบบง่ายๆ'\n"
+    "- คงรายละเอียดให้ตรงเป๊ะ: ตัวเลข หน่วย สูตร ชื่อ และวันที่\n"
+    "- เขียนสิ่งที่ 'สอน' ไม่ใช่สิ่งที่ครู 'ทำ' "
+    "ห้ามขึ้นต้นข้อด้วย 'ครู' หรือ 'อาจารย์'\n"
+    "- ข้ามการเช็คชื่อ คำทักทาย มุกตลก เรื่องนอกเรื่อง และการพูดซ้ำ\n"
+    "- ถ้าเป็นการบ้าน วันสอบ กำหนดส่งงาน หรือของที่ต้องเอามาคาบหน้า "
+    "ให้ขึ้นต้นข้อนั้นด้วย 'ADMIN: '\n"
+    "- ถ้าส่วนนี้ไม่มีเนื้อหาที่สอนจริง ไม่ต้องตอบอะไรเลย\n\n"
+    "บทถอดเสียงคาบเรียน:\n{text}"
+)
+
+_THAI_REDUCE_SCHOOL = (
+    "ด้านล่างคือโน้ตที่จดไว้ระหว่างคาบเรียนหนึ่งคาบ\n"
+    "จัดให้เป็นโน้ตทบทวนที่นักเรียนใช้อ่านก่อนสอบได้ "
+    "งานนี้คือการ 'จัดเรียง' บรรทัดที่มีอยู่ ไม่ใช่การเขียนขึ้นใหม่\n\n"
+    "ใช้หัวข้อเหล่านี้เท่านั้น:\n"
+    "## สิ่งที่เรียนวันนี้\n"
+    "## คำศัพท์ที่ต้องรู้\n"
+    "## การบ้านและสิ่งที่ต้องทำ\n\n"
+    "กฎ:\n"
+    "- ทุกข้อต้องมาจากบรรทัดด้านล่างเท่านั้น "
+    "คงตัวเลข หน่วย และสูตร ให้ตรงตามเดิม\n"
+    "- ห้ามแต่งข้อใหม่เด็ดขาด ถ้าไม่มีในบรรทัดด้านล่าง ห้ามใส่ "
+    "การแต่งการบ้านที่ครูไม่ได้สั่งเป็นความผิดร้ายแรง\n"
+    "- ใช้ภาษาง่ายและตรงไปตรงมา เพื่อให้ทบทวนได้สะดวก\n"
+    "- ตัดข้อความกว้างๆ ที่ไม่ได้บอกอะไร เช่น 'เรื่องนี้สำคัญมาก' ทิ้ง\n"
+    "- ถ้าสองบรรทัดมีใจความเดียวกัน ให้เก็บบรรทัดที่ชัดเจนกว่า\n"
+    "- บรรทัดที่มี ADMIN ให้อยู่ใต้ 'การบ้านและสิ่งที่ต้องทำ' โดยตัดคำว่า ADMIN ออก\n"
+    "- บรรทัดรูปแบบ '**คำศัพท์** — ความหมาย' ให้อยู่ใต้ 'คำศัพท์ที่ต้องรู้'\n"
+    "- ที่เหลือให้อยู่ใต้ 'สิ่งที่เรียนวันนี้' เรียงตามลำดับที่สอน\n"
+    "- หัวข้อใดไม่มีเนื้อหา ให้ตัดทิ้ง ห้ามเขียนว่า 'ไม่มี'\n\n"
+    "บรรทัด:\n{text}"
+)
+
 BUILTIN: dict[str, Language] = {
     "en": Language(
         code="en",
         name="English",
         map_prompt=_ENGLISH_MAP,
         reduce_prompt=_ENGLISH_REDUCE,
+        map_prompt_school=_ENGLISH_MAP_SCHOOL,
+        reduce_prompt_school=_ENGLISH_REDUCE_SCHOOL,
+        action_heading_school="## Homework & reminders",
     ),
     "th": Language(
         code="th",
         name="ภาษาไทย",
         map_prompt=_THAI_MAP,
         reduce_prompt=_THAI_REDUCE,
+        map_prompt_school=_THAI_MAP_SCHOOL,
+        reduce_prompt_school=_THAI_REDUCE_SCHOOL,
+        action_heading_school="## การบ้านและสิ่งที่ต้องทำ",
         key_heading="## แนวคิดสำคัญ",
         terms_heading="## คำศัพท์และนิยาม",
         action_heading="## สิ่งที่ต้องทำ",
@@ -265,8 +406,18 @@ def none_markers() -> set[str]:
 
 
 def action_headings() -> list[str]:
-    """Lowercased action-item headings across all languages."""
-    return [lang.action_heading.lstrip("#").strip().lower() for lang in load_all().values()]
+    """Lowercased action-item headings across all languages and levels.
+
+    Both registers must be listed. `drop_unbacked_actions` uses this to strip a
+    homework section the model invented, and a heading missing from here would
+    let a made-up deadline through, which is worse than having no deadline.
+    """
+    names: list[str] = []
+    for lang in load_all().values():
+        for heading in (lang.action_heading, lang.action_heading_school):
+            if heading:
+                names.append(heading.lstrip("#").strip().lower())
+    return names
 
 
 def template(code: str, name: str | None = None) -> dict[str, Any]:

@@ -78,6 +78,7 @@ class RecordingPipeline:
         live_interval: int = config.LIVE_NOTES_INTERVAL_SECONDS,
         on_update: Callable[[PipelineState], None] | None = None,
         transcribe: bool = True,
+        level: str | None = None,
     ) -> None:
         self.source = source
         self.session = session
@@ -89,6 +90,9 @@ class RecordingPipeline:
         self.summary_model = summary_model
         self.live_interval = live_interval
         self.on_update = on_update
+        # Live points are reused as the final notes, so they must be written at
+        # the same reading level the final pass will use.
+        self.level = level or config.NOTES_LEVEL
 
         self.state = PipelineState(language=language)
         self.recorder = Recorder(source, session.directory, chunk_seconds=chunk_seconds)
@@ -253,7 +257,9 @@ class RecordingPipeline:
             window_text = " ".join(s.text for s in pending)
             try:
                 window = summarize.Window(pending[0].start, pending[-1].end, window_text)
-                keys, admins = summarize.map_window(window, language, self.summary_model)
+                keys, admins = summarize.map_window(
+                    window, language, self.summary_model, level=self.level
+                )
             except summarize.SummarizerError:
                 continue  # live notes are best-effort; the transcript is safe
 

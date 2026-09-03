@@ -371,6 +371,7 @@ def map_window(
     language: str,
     model: str,
     grounding_source: str | None = None,
+    level: str | None = None,
 ) -> tuple[list[str], list[str]]:
     """Extract key points from one window. Returns (key_points, admin_points).
 
@@ -380,7 +381,7 @@ def map_window(
     callers pass the whole transcript so a point that legitimately draws on
     nearby context is not discarded.
     """
-    prompt = config.prompts_for(language)["map"].format(text=window.text)
+    prompt = config.prompts_for(language, level)["map"].format(text=window.text)
     bullets = parse_bullets(chat(prompt, model=model))
 
     key_points: list[str] = []
@@ -398,7 +399,7 @@ def map_window(
     )
 
 
-def reduce_points(points: list[str], language: str, model: str) -> str:
+def reduce_points(points: list[str], language: str, model: str, level: str | None = None) -> str:
     """Consolidate mapped points into the final markdown body.
 
     A 40-minute lecture yields perhaps 20 points and reduces in one pass. A full
@@ -412,7 +413,7 @@ def reduce_points(points: list[str], language: str, model: str) -> str:
     itself.
     """
     if len(points) <= config.REDUCE_BATCH_POINTS:
-        return _reduce_once(points, language, model)
+        return _reduce_once(points, language, model, level)
 
     batches = [
         points[i:i + config.REDUCE_BATCH_POINTS]
@@ -423,27 +424,27 @@ def reduce_points(points: list[str], language: str, model: str) -> str:
     # sees the same shape of input as a single-pass reduce would.
     partial: list[str] = []
     for batch in batches:
-        bullets = parse_bullets(_reduce_once(batch, language, model))
+        bullets = parse_bullets(_reduce_once(batch, language, model, level))
         # A batch that returns nothing usable must not silently delete its
         # points; fall back to the originals so content survives.
         partial.extend(bullets or batch)
 
     partial = dedupe_points(partial)
     if len(partial) <= config.REDUCE_BATCH_POINTS:
-        return _reduce_once(partial, language, model)
+        return _reduce_once(partial, language, model, level)
 
     # Still too many after one pass (a very long class). Recurse only while the
     # list is actually shrinking; a model that echoes its input back unchanged
     # must not spin forever, so fall through to a single pass instead.
     if len(partial) < len(points):
-        return reduce_points(partial, language, model)
-    return _reduce_once(partial[: config.REDUCE_BATCH_POINTS], language, model)
+        return reduce_points(partial, language, model, level)
+    return _reduce_once(partial[: config.REDUCE_BATCH_POINTS], language, model, level)
 
 
-def _reduce_once(points: list[str], language: str, model: str) -> str:
+def _reduce_once(points: list[str], language: str, model: str, level: str | None = None) -> str:
     """One REDUCE call over a list of points that fits in the token budget."""
     joined = "\n".join(f"- {p}" for p in points)
-    prompt = config.prompts_for(language)["reduce"].format(text=joined)
+    prompt = config.prompts_for(language, level)["reduce"].format(text=joined)
     return strip_think(chat(prompt, model=model, max_tokens=config.REDUCE_MAX_TOKENS))
 
 
@@ -505,6 +506,7 @@ def summarize_segments(
     window_seconds: int = config.MAP_WINDOW_SECONDS,
     progress=None,
     premapped: tuple[list[str], list[str], int] | None = None,
+    level: str | None = None,
 ) -> Notes:
     """Run the map-reduce over a transcript.
 
@@ -514,6 +516,7 @@ def summarize_segments(
     bell, so an hour-long class produces notes in a couple of minutes instead
     of re-doing twenty model calls the student already paid for.
     """
+    level = level or config.NOTES_LEVEL
     if not segments:
         raise SummarizerError("transcript is empty, nothing to summarize")
 
@@ -538,7 +541,9 @@ def summarize_segments(
     for index, window in enumerate(windows, start=1):
         if progress:
             progress(index, len(windows))
-        keys, admins = map_window(window, language, model, grounding_source=full_transcript)
+        keys, admins = map_window(
+            window, language, model, grounding_source=full_transcript, level=level
+        )
         key_points.extend(keys)
         admin_points.extend(admins)
 
@@ -551,23 +556,30 @@ def summarize_segments(
     # One window and nothing reused is already consolidated; a second pass adds
     # nothing. Anything larger, including reused live points, needs reducing.
     if len(windows) + (1 if covered else 0) > 1:
-        body = reduce_points(key_points + [f"ADMIN: {p}" for p in admin_points], language, model)
+        body = reduce_points(
+            key_points + [f"ADMIN: {p}" for p in admin_points], language, model, level
+        )
         # The reduce stage may invent plausible-sounding points that nobody
         # said. Keep only what the mapped points actually support.
         body = apply_grounding(body, key_points + admin_points)
         body = drop_unbacked_actions(body, admin_points)
     else:
-        body = _fallback_body(key_points, admin_points, language)
+        body = _fallback_body(key_points, admin_points, language, level)
 
     if not body.strip():
-        body = _fallback_body(key_points, admin_points, language)
+        body = _fallback_body(key_points, admin_points, language, level)
 
     body = strip_empty_sections(body)
     markdown = _render(title, body, language, duration, len(segments))
     return Notes(markdown=markdown, key_points=key_points, admin_points=admin_points, language=language)
 
 
-def _fallback_body(key_points: list[str], admin_points: list[str], language: str) -> str:
+def _fallback_body(
+    key_points: list[str],
+    admin_points: list[str],
+    language: str,
+    level: str | None = None,
+) -> str:
     """Deterministic rendering used when the reduce stage adds no value."""
     lang = languages.get(language)
 
@@ -575,7 +587,7 @@ def _fallback_body(key_points: list[str], admin_points: list[str], language: str
     parts.extend(f"- {p}" for p in key_points)
     if admin_points:
         parts.append("")
-        parts.append(lang.action_heading)
+        parts.append(lang.heading_for_actions(level or config.NOTES_LEVEL))
         parts.extend(f"- {p}" for p in admin_points)
     return "\n".join(parts)
 

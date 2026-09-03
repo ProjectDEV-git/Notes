@@ -91,12 +91,12 @@ def test_premapped_work_is_not_repeated(monkeypatch):
     """Segments already summarized during class must not be mapped again."""
     mapped: list[str] = []
 
-    def fake_map(window, language, model, grounding_source=None):
+    def fake_map(window, language, model, grounding_source=None, level=None):
         mapped.append(window.text)
         return ([f"mapped {window.text[:12]}"], [])
 
     monkeypatch.setattr(S, "map_window", fake_map)
-    monkeypatch.setattr(S, "reduce_points", lambda pts, lang, model: "\n".join(f"- {p}" for p in pts))
+    monkeypatch.setattr(S, "reduce_points", lambda pts, lang, model, level=None: "\n".join(f"- {p}" for p in pts))
 
     segments = _segments(30)
     S.summarize_segments(
@@ -110,12 +110,12 @@ def test_the_tail_after_the_last_live_pass_is_still_mapped(monkeypatch):
     """Whatever the live thread never reached must not be silently dropped."""
     mapped: list[str] = []
 
-    def fake_map(window, language, model, grounding_source=None):
+    def fake_map(window, language, model, grounding_source=None, level=None):
         mapped.append(window.text)
         return (["tail point"], [])
 
     monkeypatch.setattr(S, "map_window", fake_map)
-    monkeypatch.setattr(S, "reduce_points", lambda pts, lang, model: "\n".join(f"- {p}" for p in pts))
+    monkeypatch.setattr(S, "reduce_points", lambda pts, lang, model, level=None: "\n".join(f"- {p}" for p in pts))
 
     segments = _segments(30)
     S.summarize_segments(
@@ -143,7 +143,7 @@ def test_premapped_points_reach_the_final_notes(monkeypatch):
 def test_a_stale_count_cannot_skip_the_whole_class(monkeypatch):
     """A count larger than the transcript must not silently drop everything."""
     monkeypatch.setattr(S, "map_window", lambda *a, **k: (["x"], []))
-    monkeypatch.setattr(S, "reduce_points", lambda pts, lang, model: "- x")
+    monkeypatch.setattr(S, "reduce_points", lambda pts, lang, model, level=None: "- x")
 
     notes = S.summarize_segments(
         _segments(5), model="stub", premapped=(["known"], [], 9999),
@@ -155,12 +155,12 @@ def test_behaviour_is_unchanged_without_premapped_work(monkeypatch):
     """The plain path (no live notes) must map every window as before."""
     mapped: list[str] = []
 
-    def fake_map(window, language, model, grounding_source=None):
+    def fake_map(window, language, model, grounding_source=None, level=None):
         mapped.append(window.text)
         return (["p"], [])
 
     monkeypatch.setattr(S, "map_window", fake_map)
-    monkeypatch.setattr(S, "reduce_points", lambda pts, lang, model: "- p")
+    monkeypatch.setattr(S, "reduce_points", lambda pts, lang, model, level=None: "- p")
 
     S.summarize_segments(_segments(30), model="stub")
     assert mapped, "nothing was summarized at all"

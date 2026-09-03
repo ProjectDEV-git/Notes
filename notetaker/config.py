@@ -137,9 +137,21 @@ STRIP_THINK_BLOCKS = True
 # code. Built-ins are in notetaker/languages.py; user packs go in
 # ~/.config/notetaker/languages/*.json. See docs/LANGUAGES.md.
 # --------------------------------------------------------------------------
-def prompts_for(language: str | None) -> dict[str, str]:
-    """Return the map and reduce prompts for a language, falling back to English."""
+# Who the notes are written for. A 14-year-old and a postgraduate need the same
+# facts written very differently: the school register defines every new term,
+# keeps sentences short, and says "homework" rather than "action items".
+# Override with --level or NOTETAKER_NOTES_LEVEL.
+NOTES_LEVEL = os.environ.get("NOTETAKER_NOTES_LEVEL", "school")
+NOTES_LEVELS = ("school", "university")
+
+
+def prompts_for(language: str | None, level: str | None = None) -> dict[str, str]:
+    """Return the map and reduce prompts for a language and reading level.
+
+    A language pack that has no school prompts falls back to its normal ones,
+    so every pack a user has already written keeps working untouched.
+    """
     from . import languages
 
     lang = languages.get(language)
-    return {"map": lang.map_prompt, "reduce": lang.reduce_prompt}
+    return lang.prompts(level or NOTES_LEVEL)
