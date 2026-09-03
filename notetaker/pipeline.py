@@ -33,6 +33,15 @@ class PipelineState:
     language: str | None = None
     error: str | None = None
     warning: str | None = None
+    # Set when stop() gave up before the ASR worker had drained its backlog.
+    # The chunks are still on disk and can be finished later.
+    undrained_chunks: int = 0
+    # Key/admin points already extracted by the live-notes thread, and how many
+    # segments they cover. Reused at finish so an hour of MAP work is not
+    # repeated after the bell.
+    live_key_points: list[str] = field(default_factory=list)
+    live_admin_points: list[str] = field(default_factory=list)
+    live_consumed: int = 0
 
     @property
     def recent_text(self) -> list[str]:
@@ -47,6 +56,11 @@ class PipelineState:
         Thai, which runs several times slower than real time on CPU.
         """
         return self.chunks_pending >= 3
+
+    @property
+    def finished_cleanly(self) -> bool:
+        """True when every recorded chunk made it into the transcript."""
+        return self.undrained_chunks == 0
 
 
 class RecordingPipeline:
@@ -80,6 +94,11 @@ class RecordingPipeline:
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self._chunk_seconds = chunk_seconds
+        # Rolling measurement of how long one chunk takes to transcribe, used to
+        # size the drain timeout. Thai on CPU runs several times slower than
+        # real time, so a fixed timeout truncates the end of a long class.
+        self._chunk_cost: float = 0.0
+        self._asr_thread: threading.Thread | None = None
 
     # -- lifecycle ------------------------------------------------------
     def start(self) -> None:
@@ -88,8 +107,10 @@ class RecordingPipeline:
         self._transcriber = Transcriber(self.model, language=self.language)
         self.recorder.start()
 
+        asr = threading.Thread(target=self._transcribe_loop, name="asr", daemon=True)
+        self._asr_thread = asr
         self._threads = [
-            threading.Thread(target=self._transcribe_loop, name="asr", daemon=True),
+            asr,
             threading.Thread(target=self._tick_loop, name="tick", daemon=True),
         ]
         if self.live_notes:
@@ -99,14 +120,54 @@ class RecordingPipeline:
         for thread in self._threads:
             thread.start()
 
-    def stop(self, timeout: float = 120.0) -> None:
-        """Stop capture and wait for the ASR worker to drain remaining chunks."""
+    def drain_timeout(self, floor: float = 120.0) -> float:
+        """How long to wait for the ASR worker, based on the real backlog.
+
+        A flat timeout silently truncates a long class: an hour of Thai can
+        leave a 20-chunk backlog that needs far longer than two minutes to
+        finish. Budget the measured per-chunk cost for every pending chunk,
+        with generous headroom, and never wait less than `floor`.
+        """
+        with self._lock:
+            pending = self.state.chunks_pending
+        cost = self._chunk_cost or float(self._chunk_seconds)
+        return max(floor, pending * cost * 1.5 + floor)
+
+    def stop(self, timeout: float | None = None) -> bool:
+        """Stop capture and wait for the ASR worker to drain remaining chunks.
+
+        Returns True when the worker drained. When it did not, the leftover
+        chunks stay on disk and `state.undrained_chunks` says how many, so the
+        caller can tell the user how to finish the job rather than deleting
+        their audio.
+        """
         self.recorder.stop()
+        budget = self.drain_timeout() if timeout is None else timeout
         self._stop.set()
+
+        # The ASR worker is the only thread whose unfinished work loses data,
+        # so it gets the whole budget; the display threads exit promptly.
+        drained = True
+        if self._asr_thread is not None:
+            self._asr_thread.join(timeout=budget)
+            drained = not self._asr_thread.is_alive()
         for thread in self._threads:
-            thread.join(timeout=timeout)
+            if thread is not self._asr_thread:
+                thread.join(timeout=10.0)
+
+        with self._lock:
+            self.state.undrained_chunks = 0 if drained else self._pending_on_disk()
+        return drained
 
     # -- worker threads --------------------------------------------------
+    def _pending_on_disk(self) -> int:
+        """Chunks written but not yet transcribed. Caller holds the lock."""
+        try:
+            on_disk = len(list(self.recorder.chunks_dir.glob("chunk_*.wav")))
+        except Exception:
+            return 0
+        return max(on_disk - self.state.chunks_done, 0)
+
     def _transcribe_loop(self) -> None:
         assert self._transcriber is not None
         try:
@@ -117,12 +178,20 @@ class RecordingPipeline:
                     except Exception:
                         level = 0.0
 
+                    started = time.monotonic()
                     segments = self._transcriber.transcribe_chunk(
                         chunk,
                         offset_seconds=index * self._chunk_seconds,
                         chunk_index=index,
                     )
                     writer.write(segments)
+                    elapsed = time.monotonic() - started
+                    # Exponential moving average: recent chunks predict the
+                    # remaining backlog better than a lifetime mean.
+                    self._chunk_cost = (
+                        elapsed if not self._chunk_cost
+                        else self._chunk_cost * 0.7 + elapsed * 0.3
+                    )
 
                     with self._lock:
                         self.state.segments.extend(segments)
@@ -182,6 +251,11 @@ class RecordingPipeline:
 
             consumed += len(pending)
             with self._lock:
+                # Kept separately from the display list so the finish step can
+                # reuse the MAP work instead of paying for it a second time.
+                self.state.live_key_points.extend(keys)
+                self.state.live_admin_points.extend(admins)
+                self.state.live_consumed = consumed
                 self.state.live_points = summarize.dedupe_points(
                     self.state.live_points + keys + admins
                 )
@@ -196,7 +270,12 @@ class RecordingPipeline:
 
     # -- results ---------------------------------------------------------
     def finish(self, cleanup: bool = True) -> float:
-        """Finalize the session row and remove transient chunks."""
+        """Finalize the session row and remove transient chunks.
+
+        Chunks are only deleted once the ASR worker has drained them. If it was
+        cut short, they stay on disk: an untranscribed chunk is the only copy of
+        that part of the class that can still be recovered cheaply.
+        """
         wall_clock = self.recorder.elapsed
         duration = wall_clock
         try:
@@ -217,6 +296,6 @@ class RecordingPipeline:
             duration=duration,
             language=self.state.language,
         )
-        if cleanup:
+        if cleanup and self.state.finished_cleanly:
             self.recorder.cleanup_chunks()
         return duration

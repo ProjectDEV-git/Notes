@@ -99,6 +99,12 @@ TEST_MODEL = os.environ.get("NOTETAKER_TEST_MODEL", "llama3.2:3b")
 MAP_MAX_TOKENS = 300
 REDUCE_MAX_TOKENS = 700
 
+# Above this many mapped points, REDUCE runs in batches and the batch outputs
+# are reduced again. A 60-minute class produces roughly 40-60 points, which
+# does not fit in REDUCE_MAX_TOKENS: asking for it in one go truncates the
+# notes mid-sentence and the end of the class disappears.
+REDUCE_BATCH_POINTS = 20
+
 # Fraction of a bullet's distinctive words that must appear in the source text
 # for it to be kept. Small models will happily invent a whole lecture from a
 # single vague sentence, so every point must be traceable to what was said.

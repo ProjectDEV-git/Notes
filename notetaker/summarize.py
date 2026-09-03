@@ -399,7 +399,49 @@ def map_window(
 
 
 def reduce_points(points: list[str], language: str, model: str) -> str:
-    """Consolidate mapped points into the final markdown body."""
+    """Consolidate mapped points into the final markdown body.
+
+    A 40-minute lecture yields perhaps 20 points and reduces in one pass. A full
+    school day period yields far more, and asking for all of them back at once
+    silently truncates at REDUCE_MAX_TOKENS: the model runs out of budget
+    mid-sentence and the end of the class is simply missing from the notes.
+
+    Past a threshold the reduce is therefore done in batches, each small enough
+    to answer in full, and the batch outputs are reduced once more. Every input
+    point passes through exactly one batch, so nothing is dropped by the split
+    itself.
+    """
+    if len(points) <= config.REDUCE_BATCH_POINTS:
+        return _reduce_once(points, language, model)
+
+    batches = [
+        points[i:i + config.REDUCE_BATCH_POINTS]
+        for i in range(0, len(points), config.REDUCE_BATCH_POINTS)
+    ]
+
+    # Each batch comes back as markdown; strip it to bullets so the final pass
+    # sees the same shape of input as a single-pass reduce would.
+    partial: list[str] = []
+    for batch in batches:
+        bullets = parse_bullets(_reduce_once(batch, language, model))
+        # A batch that returns nothing usable must not silently delete its
+        # points; fall back to the originals so content survives.
+        partial.extend(bullets or batch)
+
+    partial = dedupe_points(partial)
+    if len(partial) <= config.REDUCE_BATCH_POINTS:
+        return _reduce_once(partial, language, model)
+
+    # Still too many after one pass (a very long class). Recurse only while the
+    # list is actually shrinking; a model that echoes its input back unchanged
+    # must not spin forever, so fall through to a single pass instead.
+    if len(partial) < len(points):
+        return reduce_points(partial, language, model)
+    return _reduce_once(partial[: config.REDUCE_BATCH_POINTS], language, model)
+
+
+def _reduce_once(points: list[str], language: str, model: str) -> str:
+    """One REDUCE call over a list of points that fits in the token budget."""
     joined = "\n".join(f"- {p}" for p in points)
     prompt = config.prompts_for(language)["reduce"].format(text=joined)
     return strip_think(chat(prompt, model=model, max_tokens=config.REDUCE_MAX_TOKENS))
