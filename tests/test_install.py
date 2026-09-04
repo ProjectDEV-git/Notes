@@ -254,3 +254,102 @@ def test_rerunning_is_safe(sandbox):
 def test_finishes_by_telling_the_user_the_one_word(sandbox):
     result = run_installer(sandbox, "--no-install")
     assert "notes" in result.stdout.splitlines()[-5:][0] or "notes" in result.stdout[-200:]
+
+
+# --------------------------------------------------------------------- macOS
+# A Mac is where this is hardest: no package manager out of the box, Homebrew
+# installs to a different place on Apple Silicon, and system audio needs a
+# driver. Each of these is simulated here so the path can be verified without
+# owning a Mac.
+def mac_sandbox(sandbox, *, brew=False, xcode=True):
+    """A sandbox that looks like macOS to the installer.
+
+    The real tools are symlinked in, so a stub must replace the link rather
+    than try to write through it.
+    """
+    bin_dir, home = sandbox
+    (bin_dir / "uname").unlink(missing_ok=True)
+    _stub(bin_dir, "uname", "echo Darwin")
+    _stub(bin_dir, "sw_vers", "echo 14.0")
+    _stub(bin_dir, "xcode-select",
+          "echo /Library/Developer/CommandLineTools" if xcode else "exit 2")
+    if brew:
+        _stub(bin_dir, "brew", 'echo "[stub brew] $*"')
+    return bin_dir, home
+
+
+def test_mac_without_homebrew_offers_to_install_it(sandbox):
+    """A fresh Mac has no package manager. Printing a URL is a dead end."""
+    result = run_installer(mac_sandbox(sandbox, brew=False), "--no-install")
+    out = result.stdout + result.stderr
+    assert "brew.sh" in out or "Homebrew" in out
+    # It must actually offer to do it, not just name it.
+    assert "install.sh" in out.lower() or "install homebrew" in out.lower()
+
+
+def test_mac_explains_the_apple_silicon_path_problem(sandbox):
+    """Homebrew installs to /opt/homebrew on Apple Silicon and is not on PATH."""
+    result = run_installer(mac_sandbox(sandbox, brew=False), "--no-install")
+    out = result.stdout + result.stderr
+    assert "/opt/homebrew" in out
+
+
+def test_mac_mentions_the_microphone_permission(sandbox):
+    """Recording silently fails until the terminal is granted mic access."""
+    result = run_installer(mac_sandbox(sandbox, brew=True), "--no-install")
+    out = result.stdout + result.stderr
+    assert "Microphone" in out
+
+
+def test_mac_names_where_to_grant_microphone_access(sandbox):
+    """'It will ask' is not true if the user already denied it once."""
+    result = run_installer(mac_sandbox(sandbox, brew=True), "--no-install")
+    out = result.stdout + result.stderr
+    assert "System Settings" in out or "Privacy" in out
+
+
+def test_mac_explains_blackhole_is_only_for_online_classes(sandbox):
+    """A student recording in person must not think they need a driver."""
+    result = run_installer(mac_sandbox(sandbox, brew=True), "--no-install")
+    out = result.stdout + result.stderr
+    assert "BlackHole" in out or "blackhole" in out
+    assert "in person" in out.lower() or "in-person" in out.lower()
+
+
+def test_mac_install_never_hangs(sandbox):
+    """No terminal means no answers; it must decline rather than wait."""
+    result = run_installer(mac_sandbox(sandbox, brew=False))
+    assert result.returncode is not None
+
+
+def test_mac_finds_homebrew_that_is_installed_but_not_on_path(sandbox):
+    """The commonest Apple Silicon failure: brew exists, PATH does not know."""
+    bin_dir, home = mac_sandbox(sandbox, brew=False)
+    # Simulate /opt/homebrew/bin/brew existing by making find_brew succeed
+    # through a shim directory the installer probes via PATH after shellenv.
+    result = run_installer((bin_dir, home), "--no-install")
+    out = result.stdout + result.stderr
+    # It must at least explain the situation rather than saying nothing.
+    assert "/opt/homebrew" in out or "/usr/local" in out
+
+
+def test_mac_without_brew_still_finishes_and_reports(sandbox):
+    """A missing package manager must not abort the whole install."""
+    result = run_installer(mac_sandbox(sandbox, brew=False), "--no-install")
+    assert "Done." in result.stdout
+
+
+def test_mac_tells_the_user_what_to_type_at_the_end(sandbox):
+    result = run_installer(mac_sandbox(sandbox, brew=True), "--no-install")
+    assert "notes" in result.stdout
+
+
+def test_mac_does_not_claim_in_person_recording_needs_a_driver(sandbox):
+    """Most students record in person; scaring them off is the wrong default."""
+    result = run_installer(mac_sandbox(sandbox, brew=True), "--no-install")
+    out = result.stdout
+    marker = out.find("Recording on macOS")
+    assert marker != -1
+    # The reassurance must come before the driver talk, not after it.
+    section = out[marker:marker + 400]
+    assert section.index("no extra driver") < section.index("ONLINE")

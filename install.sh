@@ -72,6 +72,61 @@ else
     done
 fi
 
+# Homebrew installs somewhere different on Apple Silicon than on Intel, and in
+# neither case does a fresh shell have it on PATH. A Mac that has Homebrew but
+# cannot see it looks exactly like a Mac with no package manager, which is the
+# single most common way this install goes wrong.
+find_brew() {
+    command -v brew >/dev/null && { echo "brew"; return 0; }
+    local candidate
+    for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+        [[ -x "$candidate" ]] && { echo "$candidate"; return 0; }
+    done
+    return 1
+}
+
+if (( IS_MAC )) && [[ -z "$PKG" ]]; then
+    if BREW_BIN="$(find_brew)"; then
+        # Found it where the installer leaves it, just not on PATH yet.
+        eval "$("$BREW_BIN" shellenv 2>/dev/null)" || true
+        command -v brew >/dev/null && PKG="brew"
+    fi
+fi
+
+# Offering to run the official installer is the difference between a student
+# finishing setup and giving up at a link to another website.
+install_homebrew() {
+    say "Homebrew is Apple's usual way to install command line software."
+    say "It is the official installer from https://brew.sh:"
+    say '  $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+    confirm_install "Install Homebrew now?" || {
+        say "  Install it later from https://brew.sh, then run ./install.sh again."
+        return 1
+    }
+
+    command -v curl >/dev/null || { warn "curl is missing, cannot download Homebrew"; return 1; }
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+        warn "the Homebrew installer did not finish"
+        return 1
+    }
+
+    local found
+    found="$(find_brew)" || { warn "Homebrew installed but could not be found"; return 1; }
+    eval "$("$found" shellenv 2>/dev/null)" || true
+    command -v brew >/dev/null || { warn "Homebrew is installed but not on PATH"; return 1; }
+    PKG="brew"
+    ok "Homebrew installed"
+    return 0
+}
+
+if (( IS_MAC )) && [[ -z "$PKG" ]]; then
+    step "Homebrew (needed to install everything else)"
+    say "Nothing to install software with was found on this Mac."
+    say "Homebrew lives in /opt/homebrew on Apple Silicon and /usr/local on Intel;"
+    say "neither is on PATH until it has been set up."
+    install_homebrew || true
+fi
+
 # Package names differ per distro; only these three are ever needed.
 pkg_name() {
     case "$1:$PKG" in
@@ -107,7 +162,9 @@ ensure_command() {
 
     if [[ -z "$PKG" ]]; then
         warn "$cmd is missing ($why) and no known package manager was found."
-        (( IS_MAC )) && say "  Install Homebrew first: https://brew.sh"
+        # Homebrew was already offered above; repeating a bare link here just
+        # tells the user to go somewhere else after they declined.
+        (( IS_MAC )) && say "  Install Homebrew (offered above), then run ./install.sh again."
         return 1
     fi
     if confirm_install "Install $cmd? ($why)"; then
@@ -295,7 +352,11 @@ esac
 # macOS: system audio needs a loopback driver
 # --------------------------------------------------------------------------
 if (( IS_MAC )); then
-    step "Online lectures on macOS"
+    step "Recording on macOS"
+    say "Recording a class you are sitting in works now, with no extra driver."
+    say
+    say "Only ONLINE classes need one, because macOS cannot record what the"
+    say "speakers are playing on its own. Skip this if you record in person."
     if command -v ffmpeg >/dev/null &&
        ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 |
          grep -qiE "blackhole|soundflower|loopback"; then
@@ -303,7 +364,6 @@ if (( IS_MAC )); then
     else
         # macOS exposes no monitor of the output, so without this `notes
         # online` records silence.
-        say "macOS cannot record what your speakers play without a loopback driver."
         if [[ "$PKG" == "brew" ]] && confirm_install "Install BlackHole (free, open source)?"; then
             say "  \$ brew install --cask blackhole-2ch"
             brew install --cask blackhole-2ch && ok "BlackHole installed"
@@ -313,11 +373,17 @@ if (( IS_MAC )); then
             say "  2. Create a Multi-Output Device with BlackHole 2ch + your speakers"
             say "  3. Select it as your sound output during online lectures"
         else
-            say "  Install it later with: brew install --cask blackhole-2ch"
+            say "  For online classes later:  brew install --cask blackhole-2ch"
         fi
     fi
     say
-    say "The first recording will ask for Microphone permission for your terminal."
+    step "Microphone permission"
+    say "The first recording asks for Microphone access for your terminal app."
+    say "You must say yes, or every class records perfect silence."
+    say
+    say "If you already said no once, macOS will not ask again. Turn it on at:"
+    say "  System Settings > Privacy & Security > Microphone"
+    say "and enable your terminal (Terminal, iTerm, or whichever you use)."
 fi
 
 # --------------------------------------------------------------------------
