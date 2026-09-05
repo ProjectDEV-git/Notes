@@ -313,7 +313,7 @@ def cmd_record(args: argparse.Namespace) -> int:
         return 0
 
     if args.no_summary:
-        echo(f"[dim]run: notetaker summarize {session.id}[/dim]")
+        echo(f"[dim]write the notes later with:  notes catchup[/dim]")
         return 0
 
     # The live-notes thread already summarized most of the class while it was
@@ -349,7 +349,7 @@ def _summarize_session(
     if not summarize.ollama_available():
         return fail(
             "Ollama is not running, so notes cannot be generated. "
-            f"Start it with 'ollama serve', then: notetaker summarize {session.id}\n"
+            f"Start it with 'ollama serve', then run:  notes catchup\n"
             f"Your transcript is safe at {session.transcript_path}"
         )
 
@@ -553,7 +553,7 @@ def cmd_show(args: argparse.Namespace) -> int:
         echo(session.notes_path.read_text(encoding="utf-8"))
         return 0
 
-    echo(f"no notes yet. Run: notetaker summarize {session.id}")
+    echo("no notes for this class yet. Write them with:  notes catchup")
     return 0
 
 
@@ -571,7 +571,7 @@ def cmd_export(args: argparse.Namespace) -> int:
         suffix = ".txt"
     else:
         if not session.notes_path.exists():
-            return fail(f"no notes yet. Run: notetaker summarize {session.id}")
+            return fail("no notes for this class yet. Write them with:  notes catchup")
         content = session.notes_path.read_text(encoding="utf-8")
         suffix = ".md"
 

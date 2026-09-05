@@ -455,3 +455,42 @@ def test_the_thai_slowness_note_is_not_shown_for_other_languages(capsys):
         state = PipelineState(language=language)
         slow = (state.language or "") == "th"
         assert slow is expected, f"{language} misclassified"
+
+
+# --------------------------------------- advice must name a command that exists
+def test_reading_a_class_with_no_notes_suggests_a_real_command(db, capsys):
+    """It suggested 'notetaker summarize <id>', which no student ever types."""
+    _recorded("Biology", transcript=True, notes=False)
+    cli.main(["show", "Biology"])
+    out = capsys.readouterr().out
+    assert "notes catchup" in out
+    assert "notetaker summarize" not in out
+
+
+def test_exporting_a_class_with_no_notes_suggests_a_real_command(db, capsys):
+    _recorded("Biology", transcript=True, notes=False)
+    cli.main(["export", "Biology", "-o", "/dev/null"])
+    out = capsys.readouterr().out
+    assert "notes catchup" in out
+
+
+def test_every_suggested_command_is_a_real_launcher_verb():
+    """Advice naming a verb the launcher does not have is worse than none.
+
+    Only checks strings that are clearly commands: 'notes <verb>' at the end of
+    a sentence or followed by a flag, not prose that happens to contain the
+    word "notes".
+    """
+    import re
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parent.parent
+    source = (repo / "notetaker" / "cli.py").read_text()
+    launcher = (repo / "scripts" / "notes").read_text()
+
+    # 'notes catchup' as a command: two spaces before it, or trailing quote.
+    suggested = set(re.findall(r"(?:  |`)notes ([a-z]+)", source))
+    assert suggested, "no command suggestions found to check"
+    for verb in sorted(suggested):
+        assert re.search(rf"^\s+[a-z|]*\b{verb}\b[a-z|]*\)", launcher, re.M), \
+            f"cli.py suggests 'notes {verb}' but the launcher has no such verb"
