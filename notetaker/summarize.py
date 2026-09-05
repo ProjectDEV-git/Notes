@@ -620,7 +620,7 @@ def _fallback_body(
     """Deterministic rendering used when the reduce stage adds no value."""
     lang = languages.get(language)
 
-    parts = [lang.key_heading]
+    parts = [lang.heading_for_key_ideas(level or config.NOTES_LEVEL)]
     parts.extend(f"- {p}" for p in key_points)
     if admin_points:
         parts.append("")

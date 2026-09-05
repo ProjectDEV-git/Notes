@@ -51,6 +51,8 @@ class Language:
     map_prompt_school: str | None = None
     reduce_prompt_school: str | None = None
     action_heading_school: str | None = None
+    key_heading_school: str | None = None
+    terms_heading_school: str | None = None
 
     @property
     def is_unspaced(self) -> bool:
@@ -71,6 +73,18 @@ class Language:
             return self.action_heading_school
         return self.action_heading
 
+    def heading_for_key_ideas(self, level: str = "school") -> str:
+        """What to call the main section at this level."""
+        if level == "school" and self.key_heading_school:
+            return self.key_heading_school
+        return self.key_heading
+
+    def heading_for_terms(self, level: str = "school") -> str:
+        """What to call the vocabulary section at this level."""
+        if level == "school" and self.terms_heading_school:
+            return self.terms_heading_school
+        return self.terms_heading
+
     def contains_script(self, text: str) -> bool:
         if not self.script_range:
             return False
@@ -89,6 +103,10 @@ class Language:
         }
         if self.action_heading_school:
             data["headings"]["action_items_school"] = self.action_heading_school
+        if self.key_heading_school:
+            data["headings"]["key_ideas_school"] = self.key_heading_school
+        if self.terms_heading_school:
+            data["headings"]["terms_school"] = self.terms_heading_school
         if self.map_prompt_school:
             data["prompts"]["map_school"] = self.map_prompt_school
         if self.reduce_prompt_school:
@@ -135,6 +153,8 @@ class Language:
             map_prompt_school=prompts.get("map_school"),
             reduce_prompt_school=prompts.get("reduce_school"),
             action_heading_school=headings.get("action_items_school"),
+            key_heading_school=headings.get("key_ideas_school"),
+            terms_heading_school=headings.get("terms_school"),
         )
 
 
@@ -341,6 +361,8 @@ BUILTIN: dict[str, Language] = {
         map_prompt_school=_ENGLISH_MAP_SCHOOL,
         reduce_prompt_school=_ENGLISH_REDUCE_SCHOOL,
         action_heading_school="## Homework & reminders",
+        key_heading_school="## What we learned",
+        terms_heading_school="## Words to know",
     ),
     "th": Language(
         code="th",
@@ -350,6 +372,8 @@ BUILTIN: dict[str, Language] = {
         map_prompt_school=_THAI_MAP_SCHOOL,
         reduce_prompt_school=_THAI_REDUCE_SCHOOL,
         action_heading_school="## การบ้านและสิ่งที่ต้องทำ",
+        key_heading_school="## สิ่งที่เรียนวันนี้",
+        terms_heading_school="## คำศัพท์ที่ต้องรู้",
         key_heading="## แนวคิดสำคัญ",
         terms_heading="## คำศัพท์และนิยาม",
         action_heading="## สิ่งที่ต้องทำ",

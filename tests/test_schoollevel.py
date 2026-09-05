@@ -322,3 +322,60 @@ def test_thai_school_headings_match_the_reduce_prompt():
     thai = languages.get("th")
     reduce_prompt = thai.prompts("school")["reduce"]
     assert thai.heading_for_actions("school").lstrip("#").strip() in reduce_prompt
+
+
+# ------------------------------------------- headings match the register too
+def test_short_class_notes_use_school_headings():
+    """A one-window class skips reduce and renders headings directly.
+
+    A real Thai run produced '## แนวคิดสำคัญ' (university) under school
+    defaults, because only the action heading had a school variant.
+    """
+    body = S._fallback_body(["พืชใช้แสงแดด"], [], "th", "school")
+    assert body.startswith("## สิ่งที่เรียนวันนี้")
+
+
+def test_short_class_notes_respect_university_level():
+    body = S._fallback_body(["a point"], [], "th", "university")
+    assert body.startswith("## แนวคิดสำคัญ")
+
+
+@pytest.mark.parametrize("code", ["en", "th"])
+def test_every_heading_has_a_school_variant(code):
+    """Mixing registers inside one page looks broken to a student."""
+    lang = languages.get(code)
+    for school, university in (
+        (lang.heading_for_key_ideas("school"), lang.heading_for_key_ideas("university")),
+        (lang.heading_for_terms("school"), lang.heading_for_terms("university")),
+        (lang.heading_for_actions("school"), lang.heading_for_actions("university")),
+    ):
+        assert school != university, f"{code}: heading is identical at both levels"
+
+
+@pytest.mark.parametrize("code", ["en", "th"])
+def test_school_headings_are_the_ones_the_prompt_asks_for(code):
+    """A heading the reduce prompt never names cannot be produced or stripped."""
+    lang = languages.get(code)
+    reduce_prompt = lang.prompts("school")["reduce"]
+    for heading in (lang.heading_for_key_ideas("school"),
+                    lang.heading_for_terms("school"),
+                    lang.heading_for_actions("school")):
+        assert heading.lstrip("#").strip() in reduce_prompt
+
+
+def test_a_pack_without_school_headings_falls_back():
+    """Existing user packs must keep working unchanged."""
+    pack = languages.Language.from_dict("xx", {
+        "name": "Test",
+        "headings": {"key_ideas": "## Main", "terms": "## Words"},
+        "prompts": {"map": "m {text}", "reduce": "r {text}"},
+    })
+    assert pack.heading_for_key_ideas("school") == "## Main"
+    assert pack.heading_for_terms("school") == "## Words"
+
+
+def test_school_headings_survive_a_save_and_reload():
+    data = languages.BUILTIN["th"].to_dict()
+    restored = languages.Language.from_dict("th", data)
+    assert restored.heading_for_key_ideas("school") == "## สิ่งที่เรียนวันนี้"
+    assert restored.heading_for_terms("school") == "## คำศัพท์ที่ต้องรู้"
