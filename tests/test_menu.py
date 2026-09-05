@@ -337,3 +337,46 @@ def test_the_common_path_never_asks_about_reading_level():
             patch("notetaker.cli.main", return_value=0) as cli:
         menu.main()
     assert "--level" not in cli.call_args[0][0]
+
+
+# --------------------------------------------- 'if they are missing' is a promise
+def test_writing_notes_offers_only_classes_that_need_them():
+    """Menu option 4 says 'if they are missing', so it must mean it.
+
+    Listing finished classes alongside unfinished ones buries the one the
+    student actually came for.
+    """
+    done = _Session("a", "Biology", has_notes=True)
+    todo = _Session("b", "Maths", has_notes=False)
+    with _sessions(done, todo), _answers(""):
+        chosen = menu.pick_session("summarize", needing_notes=True)
+    assert chosen.title == "Maths"
+
+
+def test_writing_notes_still_works_when_nothing_is_missing():
+    """Re-writing existing notes must stay possible, not become a dead end."""
+    done = _Session("a", "Biology", has_notes=True)
+    other = _Session("b", "Maths", has_notes=True)
+    with _sessions(done, other), _answers(""):
+        chosen = menu.pick_session("summarize", needing_notes=True)
+    assert chosen is not None
+
+
+def test_reading_notes_is_not_filtered():
+    """Option 3 reads notes, so a finished class is exactly what is wanted."""
+    done = _Session("a", "Biology", has_notes=True)
+    todo = _Session("b", "Maths", has_notes=False)
+    with _sessions(done, todo), _answers(""):
+        chosen = menu.pick_session("read")
+    assert chosen.title == "Biology", "the most recent class should still win"
+
+
+def test_the_write_notes_menu_entry_asks_for_the_filter():
+    """Testing pick_session directly does not prove the menu entry uses it."""
+    done = _Session("a", "Biology", has_notes=True)
+    todo = _Session("b", "Maths", has_notes=False)
+    with _tty(), _no_pending(), _sessions(done, todo), \
+            _answers("4", ""), patch("notetaker.cli.main", return_value=0) as cli:
+        menu.main()
+    # Maths is the one missing notes; Biology is newer and would win unfiltered.
+    assert cli.call_args[0][0] == ["summarize", "b"]

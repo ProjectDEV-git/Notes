@@ -188,9 +188,26 @@ def print_checks(checks: list[Check]) -> bool:
 # --------------------------------------------------------------------------
 # Pickers
 # --------------------------------------------------------------------------
-def pick_session(action: str = "open", limit: int = 10) -> store.Session | None:
-    """Choose a past class from a numbered list instead of typing an id."""
+def pick_session(
+    action: str = "open",
+    limit: int = 10,
+    needing_notes: bool = False,
+) -> store.Session | None:
+    """Choose a past class from a numbered list instead of typing an id.
+
+    `needing_notes` puts the classes that are actually missing notes first,
+    because the menu entry that uses it promises "if they are missing" and a
+    list of finished classes buries the one the student came for.
+    """
     sessions = store.list_sessions(limit=limit)
+    if needing_notes:
+        missing = [s for s in sessions if not s.has_notes]
+        if missing:
+            # Only the ones that need doing; the rest are still reachable by
+            # re-running this with notes already present.
+            sessions = missing
+        else:
+            out("[dim]Every class already has notes. Pick one to write again.[/dim]")
     if not sessions:
         out("[yellow]No classes recorded yet.[/yellow]")
         return None
@@ -376,7 +393,7 @@ def _open_last() -> int:
 
 
 def _make_notes() -> int:
-    session = pick_session("summarize")
+    session = pick_session("summarize", needing_notes=True)
     if session is None:
         return 0
     argv = ["summarize", session.id]
