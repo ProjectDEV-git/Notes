@@ -251,7 +251,7 @@ Recordings live in `~/.local/share/notetaker/sessions/<id>/`:
 | file | what it is |
 |---|---|
 | `audio.wav` | the recording, kept so you can re-run `--hq` |
-| `transcript.jsonl` | timestamped transcript, written as the lecture happens |
+| `transcript.jsonl` | timestamped transcript, written as the class happens |
 | `notes.md` | the key ideas |
 
 ---
@@ -361,7 +361,7 @@ for the whole day rather than waiting after each period.
 - **Recordings are never deleted.** A one-hour class keeps about 115 MB of
   audio so `--hq` re-runs stay possible. Delete old sessions yourself from
   `~/.local/share/notetaker/sessions/` if space runs short.
-- **macOS needs a loopback driver for online lectures.** BlackHole or similar;
+- **macOS needs a loopback driver for online classes.** BlackHole or similar;
   see Install. In-person recording works with no extra setup.
 - Linux and macOS only. Windows is not supported.
 
@@ -371,7 +371,7 @@ for the whole day rather than waiting after each period.
 exposes no `.monitor` device; on macOS you need a loopback driver
 (`brew install blackhole-2ch`).
 
-**Recording is silent** — for online lectures, make sure the audio really is
+**Recording is silent** — for online classes, make sure the audio really is
 playing through the sink you selected. `notetaker devices` marks the default.
 
 **Not sure what is wrong** — run `notes check`. It tests every part and prints

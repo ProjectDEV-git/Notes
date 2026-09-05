@@ -218,7 +218,7 @@ def test_check_reports_a_missing_loopback_with_a_fix():
         checks = menu.run_checks()
 
     by_name = {c.name: c for c in checks}
-    system = by_name["online lectures (system audio)"]
+    system = by_name["online classes (system audio)"]
     assert not system.ok
     assert "blackhole" in system.fix.lower()
 

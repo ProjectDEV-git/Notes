@@ -96,7 +96,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     ok = print_checks(run_checks())
     if ok:
-        echo("\n[green]Everything is ready. You can record a lecture.[/green]")
+        echo("\n[green]Everything is ready. You can record a class.[/green]")
     return 0 if ok else 1
 
 

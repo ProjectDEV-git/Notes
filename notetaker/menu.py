@@ -119,14 +119,14 @@ def run_checks() -> list[Check]:
 
     checks.append(
         Check(
-            "in-person lectures (microphone)",
+            "classes you attend (microphone)",
             bool(mics),
             mics[0].description if mics else "no microphone found",
         )
     )
     checks.append(
         Check(
-            "online lectures (system audio)",
+            "online classes (system audio)",
             bool(systems),
             systems[0].description if systems else "not available",
             "" if systems else _pkg_hint(
@@ -189,15 +189,15 @@ def print_checks(checks: list[Check]) -> bool:
 # Pickers
 # --------------------------------------------------------------------------
 def pick_session(action: str = "open", limit: int = 10) -> store.Session | None:
-    """Choose a past lecture from a numbered list instead of typing an id."""
+    """Choose a past class from a numbered list instead of typing an id."""
     sessions = store.list_sessions(limit=limit)
     if not sessions:
-        out("[yellow]No lectures recorded yet.[/yellow]")
+        out("[yellow]No classes recorded yet.[/yellow]")
         return None
     if len(sessions) == 1:
         return sessions[0]
 
-    out(f"\n[bold]Which lecture do you want to {action}?[/bold]")
+    out(f"\n[bold]Which class do you want to {action}?[/bold]")
     for index, session in enumerate(sessions, start=1):
         when = session.started_at.replace("T", " ")[:16]
         notes = "notes ready" if session.has_notes else "no notes yet"
@@ -210,7 +210,7 @@ def pick_session(action: str = "open", limit: int = 10) -> store.Session | None:
     try:
         chosen = sessions[int(answer) - 1]
     except (ValueError, IndexError):
-        out("[yellow]Not a valid number, using the most recent lecture.[/yellow]")
+        out("[yellow]Not a valid number, using the most recent class.[/yellow]")
         return sessions[0]
     return chosen
 
@@ -383,7 +383,7 @@ def _save_to_file() -> int:
 def _check() -> int:
     ok = print_checks(run_checks())
     if ok:
-        out("\n[green]Everything is ready. You can record a lecture.[/green]")
+        out("\n[green]Everything is ready. You can record a class.[/green]")
     out("\n[dim]Same thing, typed:  notes check[/dim]")
     return 0 if ok else 1
 
