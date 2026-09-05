@@ -302,18 +302,21 @@ re-measured under the current school-level defaults:
 |---|---|
 | recording | 10:48 captured, 123 segments, duration reported correctly |
 | transcription | kept up live; ~90 s to drain the backlog after stopping |
-| summarizing | 3 m 11 s across 4 map-reduce windows |
-| **output** | **1130 words -> 117 words (10.4% of the transcript)** |
+| summarizing | 3-6 min across 4 map-reduce windows |
+| **output** | **1130 words -> ~130 words (~12% of the transcript)** |
 
-The notes correctly picked up the Physics/Metaphysics split and the discussion
-of first causes, both genuinely said.
+The notes correctly picked up the Physics/Metaphysics split, the discussion of
+first causes, and the exoteric/esoteric distinction, all genuinely said.
 
-They also show the honest failure mode. Asked to define new words, the model
-turned two proper nouns the speaker mentioned in passing, a translator's name
-and a dictionary, into "terms" with invented-sounding glosses. Nothing was
-fabricated from nothing, but a name can be miscast as vocabulary. **Check
-anything that matters against the transcript** with
-`notetaker show <id> --transcript`.
+This recording is also what exposed two real defects, both since fixed: the
+model narrated the lesson ("the teacher talked about...") despite every prompt
+forbidding it, and it turned words the transcriber mis-heard into confident
+vocabulary definitions.
+
+The first is now filtered in code. The second is only discouraged by the
+prompt, so it can still happen: a transcription error that looks like a term
+may reach "Words to know" with an invented meaning. **Check anything that
+matters against the transcript** with `notetaker show <id> --transcript`.
 
 ### Measured on a real class
 
@@ -356,10 +359,11 @@ for the whole day rather than waiting after each period.
   on Thai and is noticeably more accurate.
 - **Thai summaries occasionally invent a term.** Observed "Kleorophil pars" in
   place of a real word. Check anything that matters against the transcript.
-- **"Words to know" can miscast a name as vocabulary.** School notes are asked
-  to define new words, and a model will sometimes treat a person or a book the
-  speaker named in passing as a term needing a definition. The name is real;
-  the gloss may not be. Worth a glance before revising from it.
+- **"Words to know" can contain an invented definition.** School notes are
+  asked to define new words, so a word the transcriber mis-heard can arrive
+  looking like real vocabulary and be given a confident meaning. The prompts
+  discourage this, but a small model still does it occasionally. Glance over
+  that section before revising from it.
 - **System audio captures everything you can hear.** Mute unrelated tabs before
   recording an online class, or you will get their content in your notes.
 - **Notes do not appear the moment class ends.** Merging a full class takes
