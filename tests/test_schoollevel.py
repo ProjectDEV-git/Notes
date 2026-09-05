@@ -268,3 +268,57 @@ def test_reduce_is_told_to_drop_bad_definitions():
         assert "{text}" in reduce_prompt
     assert "worse than a missing one" in languages.get("en").prompts("school")["reduce"]
     assert "แย่กว่าไม่มีนิยาม" in languages.get("th").prompts("school")["reduce"]
+
+
+# ------------------------------------------------ narration in Thai as well
+@pytest.mark.parametrize("bullet", [
+    "ผู้สอนพูดถึงเรื่องพลังงาน",        # the instructor talked about energy
+    "อาจารย์อธิบายเรื่องแรงโน้มถ่วง",    # the teacher explained gravity
+    "ครูบอกว่าให้อ่านหน้า 40",          # the teacher said to read page 40
+    "วิทยากรกล่าวถึงการทดลอง",          # the speaker mentioned the experiment
+])
+def test_thai_narration_is_dropped(bullet):
+    """Thai is a first-class language here, so it needs the same guard.
+
+    The Thai prompts forbid opening a bullet with ผู้สอน or อาจารย์ in the same
+    way the English ones do, and a small model ignores it in the same way.
+    """
+    assert S.parse_bullets(f"- {bullet}\n") == []
+
+
+@pytest.mark.parametrize("bullet", [
+    "พลังงานศักย์เปลี่ยนเป็นพลังงานจลน์เมื่อวัตถุตกลง",  # real physics content
+    "ครูใหญ่คือผู้บริหารสูงสุดของโรงเรียน",              # 'headmaster' as subject matter
+])
+def test_real_thai_content_survives(bullet):
+    """Thai has no word spaces, so an over-eager pattern would eat real notes."""
+    assert S.parse_bullets(f"- {bullet}\n") == [bullet]
+
+
+def test_narration_check_is_exposed_for_both_languages():
+    assert S.is_narration("The teacher talked about energy")
+    assert S.is_narration("ผู้สอนพูดถึงเรื่องพลังงาน")
+    assert not S.is_narration("Plants use sunlight to make food")
+    assert not S.is_narration("พลังงานศักย์เปลี่ยนเป็นพลังงานจลน์")
+
+
+def test_both_built_in_languages_get_the_same_guards():
+    """A guard added only in English silently leaves Thai classes broken.
+
+    That is exactly what happened with the narration filter, which shipped
+    English-only and let 'ผู้สอนพูดถึง...' straight through.
+    """
+    en = languages.get("en").prompts("school")
+    th = languages.get("th").prompts("school")
+
+    assert "NOT a word to define" in en["map"]
+    assert "ไม่ใช่คำศัพท์ที่ต้องนิยาม" in th["map"]
+    assert "worse than a missing one" in en["reduce"]
+    assert "แย่กว่าไม่มีนิยาม" in th["reduce"]
+
+
+def test_thai_school_headings_match_the_reduce_prompt():
+    """A heading the prompt never asks for cannot be produced or stripped."""
+    thai = languages.get("th")
+    reduce_prompt = thai.prompts("school")["reduce"]
+    assert thai.heading_for_actions("school").lstrip("#").strip() in reduce_prompt

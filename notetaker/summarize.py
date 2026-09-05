@@ -44,6 +44,27 @@ NARRATION = re.compile(
     r"introduced|described|noted|referred|reminded)\b",
     re.IGNORECASE,
 )
+
+# The same failure in Thai, which the Thai prompts forbid in the same words.
+# Thai is written without spaces, so this cannot be word-anchored: it matches a
+# speaker noun at the very start of the bullet followed closely by a speech
+# verb. Requiring both, adjacent, keeps it from eating a sentence that merely
+# mentions a teacher.
+NARRATION_TH = re.compile(
+    r"^\s*(?:ผู้สอน|อาจารย์|ครู|วิทยากร|ผู้บรรยาย)"
+    r".{0,12}?"
+    r"(?:พูดถึง|กล่าวถึง|อธิบาย|บอกว่า|เล่าถึง|บรรยาย|กล่าว|บอก|สอนว่า)"
+)
+
+
+def is_narration(text: str) -> bool:
+    """True for a bullet that reports the lesson happening, not its content.
+
+    Checked for every language, because the transcript language is not always
+    known at the point a bullet is parsed, and a false positive costs one
+    bullet while a false negative costs the reader's trust.
+    """
+    return bool(NARRATION.match(text) or NARRATION_TH.match(text))
 # Punctuation stripped for grounding checks, but digits and units are kept so a
 # bullet citing "150 J" stays traceable to its source line.
 _PUNCT_KEEP = re.compile(r"[^\w\s]", re.UNICODE)
@@ -150,7 +171,7 @@ def parse_bullets(text: str) -> list[str]:
             # the rendered notes do not show a doubled bullet.
             while _BULLET.match(cleaned):
                 cleaned = _BULLET.sub("", cleaned).strip()
-            if cleaned and not NARRATION.match(cleaned):
+            if cleaned and not is_narration(cleaned):
                 bullets.append(cleaned)
     return bullets
 
@@ -476,7 +497,7 @@ def apply_grounding(markdown: str, sources: list[str]) -> str:
         stripped = line.strip()
         if _BULLET.match(stripped):
             text = _BULLET.sub("", stripped).strip()
-            if NARRATION.match(text):
+            if is_narration(text):
                 continue  # says a topic came up, not what was taught about it
             if not drop_ungrounded([text], sources):
                 continue  # nobody said this
