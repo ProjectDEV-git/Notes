@@ -292,21 +292,28 @@ token budget on chain-of-thought instead of answering, so a **non-reasoning
 instruct model is the right choice here**. Change it with `--model` or
 `NOTETAKER_SUMMARY_MODEL`.
 
-### Verified on a real 10-minute lecture
+### Verified on a real recording
 
 Tested end to end on a genuine 10-minute university lecture (Aristotle's logic),
-captured through system audio exactly as an online lecture would be:
+captured through system audio exactly as an online class would be, then
+re-measured under the current school-level defaults:
 
 | stage | result |
 |---|---|
 | recording | 10:48 captured, 123 segments, duration reported correctly |
 | transcription | kept up live; ~90 s to drain the backlog after stopping |
-| summarizing | 3 m 31 s across 4 map-reduce windows |
-| **output** | **1130 words → 171 words (17.3% of the transcript)** |
+| summarizing | 3 m 11 s across 4 map-reduce windows |
+| **output** | **1130 words -> 117 words (10.4% of the transcript)** |
 
-Every claim in the notes was checked against the transcript and none was
-fabricated: the first-cause discussion, the physics/metaphysics split, and the
-exoteric works "lacking literary value" were all genuinely said.
+The notes correctly picked up the Physics/Metaphysics split and the discussion
+of first causes, both genuinely said.
+
+They also show the honest failure mode. Asked to define new words, the model
+turned two proper nouns the speaker mentioned in passing, a translator's name
+and a dictionary, into "terms" with invented-sounding glosses. Nothing was
+fabricated from nothing, but a name can be miscast as vocabulary. **Check
+anything that matters against the transcript** with
+`notetaker show <id> --transcript`.
 
 ### Measured on a real class
 
@@ -349,6 +356,10 @@ for the whole day rather than waiting after each period.
   on Thai and is noticeably more accurate.
 - **Thai summaries occasionally invent a term.** Observed "Kleorophil pars" in
   place of a real word. Check anything that matters against the transcript.
+- **"Words to know" can miscast a name as vocabulary.** School notes are asked
+  to define new words, and a model will sometimes treat a person or a book the
+  speaker named in passing as a term needing a definition. The name is real;
+  the gloss may not be. Worth a glance before revising from it.
 - **System audio captures everything you can hear.** Mute unrelated tabs before
   recording an online class, or you will get their content in your notes.
 - **Notes do not appear the moment class ends.** Merging a full class takes

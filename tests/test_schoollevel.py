@@ -200,3 +200,57 @@ def test_live_notes_use_the_same_level_as_the_final_notes():
     )
     pipe = RecordingPipeline(source=source, session=session, level="university")
     assert pipe.level == "university"
+
+
+# ------------------------------------------------- narration is not a note
+def test_narration_bullets_are_dropped():
+    """'The teacher talked about X' says a topic came up, not what was taught.
+
+    Every prompt forbids this and a small model produces it anyway, so it is
+    enforced in code. Observed in a real run against llama3.2:3b.
+    """
+    text = (
+        "- The teacher talked about Apostles, a series of books.\n"
+        "- The teacher also mentioned the Oxford Bill.\n"
+        "- First cause refers to an explanation for how something began.\n"
+    )
+    kept = S.parse_bullets(text)
+    assert kept == ["First cause refers to an explanation for how something began."]
+
+
+@pytest.mark.parametrize("bullet", [
+    "The teacher talked about energy",
+    "The lecturer discussed momentum",
+    "The professor explained the formula",
+    "The speaker mentioned a deadline",
+    "the class covered photosynthesis",
+    "The teacher also mentioned the Oxford Bill",
+])
+def test_every_narration_phrasing_is_caught(bullet):
+    assert S.parse_bullets(f"- {bullet}\n") == []
+
+
+@pytest.mark.parametrize("bullet", [
+    "Teachers are paid monthly under the new contract",
+    "The lesson plan for photosynthesis has three stages",
+    "Speakers convert electrical energy into sound",
+    "Class size affects how much feedback a student gets",
+])
+def test_real_content_about_teaching_is_not_dropped(bullet):
+    """The filter must not eat genuine subject matter that names a teacher."""
+    assert S.parse_bullets(f"- {bullet}\n") == [bullet]
+
+
+def test_narration_is_also_stripped_from_final_notes():
+    """The reduce stage can reintroduce narration the map stage never emitted."""
+    markdown = (
+        "## What we learned\n"
+        "- The teacher talked about photosynthesis\n"
+        "- Plants use sunlight to make food\n"
+    )
+    cleaned = S.apply_grounding(
+        markdown,
+        ["The teacher talked about photosynthesis", "Plants use sunlight to make food"],
+    )
+    assert "teacher talked" not in cleaned
+    assert "Plants use sunlight to make food" in cleaned

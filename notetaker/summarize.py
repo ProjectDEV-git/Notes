@@ -30,6 +30,20 @@ _ORPHAN_THINK = re.compile(r"</?think>", re.IGNORECASE)
 _BULLET = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+")
 # Internal tag used to route admin asides; must never appear in final notes.
 ADMIN_LINE = re.compile(r"ADMIN\s*:\s*", re.IGNORECASE)
+
+# Bullets that narrate the lesson instead of recording what was taught.
+# Every prompt forbids these, and small models produce them anyway: "the
+# teacher talked about X" is worthless in revision notes, because it says a
+# topic came up without saying anything about it. Enforced here rather than
+# trusted to the prompt.
+NARRATION = re.compile(
+    r"^\s*(?:the\s+)?"
+    r"(?:teacher|lecturer|professor|speaker|instructor|tutor|class|lesson)\b"
+    r"\s*(?:also\s+)?"
+    r"(?:talked|spoke|discussed|mentioned|explained|said|told|covered|went|"
+    r"introduced|described|noted|referred|reminded)\b",
+    re.IGNORECASE,
+)
 # Punctuation stripped for grounding checks, but digits and units are kept so a
 # bullet citing "150 J" stays traceable to its source line.
 _PUNCT_KEEP = re.compile(r"[^\w\s]", re.UNICODE)
@@ -136,7 +150,7 @@ def parse_bullets(text: str) -> list[str]:
             # the rendered notes do not show a doubled bullet.
             while _BULLET.match(cleaned):
                 cleaned = _BULLET.sub("", cleaned).strip()
-            if cleaned:
+            if cleaned and not NARRATION.match(cleaned):
                 bullets.append(cleaned)
     return bullets
 
@@ -462,6 +476,8 @@ def apply_grounding(markdown: str, sources: list[str]) -> str:
         stripped = line.strip()
         if _BULLET.match(stripped):
             text = _BULLET.sub("", stripped).strip()
+            if NARRATION.match(text):
+                continue  # says a topic came up, not what was taught about it
             if not drop_ungrounded([text], sources):
                 continue  # nobody said this
             if len(dedupe_points(seen + [text])) == len(seen):
