@@ -158,8 +158,14 @@ def test_render_thai_metadata():
 
 
 def test_fallback_body_uses_thai_headings():
-    body = S._fallback_body(["จุดสำคัญ"], [], "th")
-    assert "แนวคิดสำคัญ" in body
+    """Thai notes get Thai headings, in whichever register was asked for."""
+    from notetaker import languages
+
+    thai = languages.get("th")
+    for level in ("school", "university"):
+        body = S._fallback_body(["จุดสำคัญ"], [], "th", level)
+        expected = thai.heading_for_key_ideas(level).lstrip("#").strip()
+        assert expected in body
 
 
 def test_fallback_omits_admin_section_when_empty():

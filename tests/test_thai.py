@@ -96,7 +96,13 @@ def test_thai_transcript_produces_thai_notes():
 
     assert notes.language == "th"
     assert any("\u0e00" <= ch <= "\u0e7f" for ch in notes.markdown), "notes are not Thai"
-    assert "แนวคิดสำคัญ" in notes.markdown, "Thai heading missing"
+    # The exact wording depends on the reading level; what matters is that a
+    # Thai heading is used rather than an English one.
+    from notetaker import config, languages
+
+    thai = languages.get("th")
+    expected = thai.heading_for_key_ideas(config.NOTES_LEVEL).lstrip("#").strip()
+    assert expected in notes.markdown, f"Thai heading missing: {expected}"
 
 
 @needs_ollama
