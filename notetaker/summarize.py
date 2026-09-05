@@ -585,7 +585,15 @@ def summarize_segments(
         admin_points.extend(admins)
 
     if not key_points and not admin_points:
-        raise SummarizerError("model produced no key points from this transcript")
+        # Usually means the recording caught noise, music or silence rather
+        # than teaching, or every point was rejected as ungrounded. The
+        # transcript is intact either way, so point at it.
+        raise SummarizerError(
+            "no key ideas could be found in this recording. "
+            "That usually means it captured background noise rather than a "
+            "lesson. Your transcript is saved: check it with "
+            "'notes show <id> --transcript'."
+        )
 
     key_points = dedupe_points(key_points)
     admin_points = dedupe_points(admin_points)

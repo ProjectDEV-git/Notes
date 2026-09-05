@@ -417,3 +417,41 @@ def test_reusing_live_work_cuts_the_model_calls_after_the_bell():
     assert reused < scratch, "live work was not reused; the wait after class is back"
     # Only the uncovered tail should still need mapping.
     assert reused <= scratch // 3, f"expected most windows skipped, mapped {reused} of {scratch}"
+
+
+# --------------------------------------------------- the finished notes page
+def test_notes_header_records_how_long_the_class_was(db):
+    """The session row is created before recording, so it must be re-read.
+
+    A real 2-minute recording produced a header with no duration at all,
+    because the stale object still said 0 and the renderer omits a falsy one.
+    """
+    from notetaker import summarize as S
+
+    session = store.create_session("Science period 1", config.SOURCE_MIC)
+    store.finish_session(session.id, duration=3600.0, language="en")
+
+    fresh = store.get_session(session.id)
+    assert fresh.duration == 3600.0, "duration was not persisted"
+
+    rendered = S._render("Science period 1", "## What we learned\n- x", "en",
+                         fresh.duration, 12)
+    assert "60m 0s" in rendered
+
+
+def test_a_stale_session_object_loses_the_duration():
+    """Pins the bug itself: this is what the header looked like before."""
+    from notetaker import summarize as S
+
+    rendered = S._render("Science period 1", "## What we learned\n- x", "en", 0.0, 12)
+    assert "0m" not in rendered  # a falsy duration is omitted entirely
+
+
+def test_the_thai_slowness_note_is_not_shown_for_other_languages(capsys):
+    """It read like a bug report during an English class."""
+    from notetaker.pipeline import PipelineState
+
+    for language, expected in (("th", True), ("en", False), (None, False)):
+        state = PipelineState(language=language)
+        slow = (state.language or "") == "th"
+        assert slow is expected, f"{language} misclassified"

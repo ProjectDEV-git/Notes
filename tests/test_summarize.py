@@ -329,3 +329,16 @@ def test_empty_transcript_after_grounding_raises():
     vague = [Segment(0.0, 16.0, "um, okay, so, right", "en", 0)]
     with pytest.raises(S.SummarizerError):
         S.summarize_segments(vague, model=config.TEST_MODEL)
+
+
+def test_a_recording_with_no_teaching_explains_itself():
+    """'model produced no key points' told a student nothing useful.
+
+    Seen on a real 2-minute recording of background noise: the run failed with
+    a bare error and no hint that the transcript had survived.
+    """
+    with pytest.raises(S.SummarizerError) as excinfo:
+        S.summarize_segments([seg("uh")], model="stub", premapped=([], [], 1))
+    message = str(excinfo.value)
+    assert "background noise" in message
+    assert "transcript" in message

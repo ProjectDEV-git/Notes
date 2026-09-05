@@ -268,9 +268,16 @@ def cmd_record(args: argparse.Namespace) -> int:
             # Nothing is being transcribed, so do not claim otherwise.
             echo("\n[dim]saving the recording...[/dim]")
         elif pending:
+            # Only mention Thai when it is actually the language in play;
+            # otherwise the explanation is noise that reads like a bug.
+            slow_language = (pipeline.state.language or "") == "th"
+            why = (
+                " [dim]This is normal for Thai, which runs slower than real time "
+                "on CPU.[/dim]" if slow_language else ""
+            )
             echo(
-                f"\n[yellow]transcription is {pending} chunks behind, catching up now.[/yellow] "
-                "[dim]This is normal for Thai, which runs slower than real time on CPU.[/dim]"
+                f"\n[yellow]transcription is {pending} chunks behind, "
+                f"catching up now.[/yellow]{why}"
             )
         else:
             echo("\n[dim]finishing up, transcribing the last chunk...[/dim]")
@@ -285,6 +292,10 @@ def cmd_record(args: argparse.Namespace) -> int:
                 f"[dim]Finish it later with:  notes catchup[/dim]"
             )
 
+    # Re-read the row: this object was created before recording started, so its
+    # duration and language are still empty. Without this the notes header
+    # silently loses the class length.
+    session = store.get_session(session.id) or session
     segments = store.load_transcript(session)
     echo(f"[green]saved[/green] {len(segments)} segments · {format_duration(duration)} · {session.id}")
 
@@ -364,7 +375,9 @@ def _summarize_session(
             level=level,
         )
     except summarize.SummarizerError as exc:
-        return fail(str(exc))
+        # Losing the notes is recoverable; losing the transcript is not. Say
+        # where it is, so a failure here never looks like a lost class.
+        return fail(f"{exc}\n  transcript: {session.transcript_path}")
 
     store.write_notes(session, notes.markdown)
     echo()
