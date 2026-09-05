@@ -116,10 +116,17 @@ def test_show_transcript(db, capsys):
     assert "energy is conserved" in capsys.readouterr().out
 
 
-def test_show_without_notes_suggests_summarize(db, capsys):
+def test_show_without_notes_says_how_to_get_them(db, capsys):
+    """The point is actionable advice, not one particular word.
+
+    It used to name 'notetaker summarize <id>', the internal entry point; the
+    launcher a student installs is 'notes'.
+    """
     session = make_session()
     cli.cmd_show(cli.build_parser().parse_args(["show", session.id]))
-    assert "summarize" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "no notes" in out.lower()
+    assert "notes catchup" in out
 
 
 def test_show_existing_notes(db, capsys):
@@ -158,7 +165,9 @@ def test_export_without_notes_fails_cleanly(db, tmp_path, capsys):
     session = make_session()
     out = tmp_path / "x.md"
     assert cli.cmd_export(cli.build_parser().parse_args(["export", session.id, "-o", str(out)])) == 1
-    assert "summarize" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "no notes" in printed.lower()
+    assert "notes catchup" in printed
 
 
 # ------------------------------------------------------- transcript is sacred
