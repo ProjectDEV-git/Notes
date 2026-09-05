@@ -308,27 +308,33 @@ Every claim in the notes was checked against the transcript and none was
 fabricated: the first-cause discussion, the physics/metaphysics split, and the
 exoteric works "lacking literary value" were all genuinely said.
 
-### Measured on a full 60-minute class
+### Measured on a real class
 
-A one-hour class is 20 map-reduce windows. Measured on this CPU with
-`llama3.2:3b`:
+Timed end to end on this CPU with `llama3.2:3b`, on a 41-minute class
+(14 map-reduce windows), summarizing the whole transcript for real:
+
+| after the bell | time | speedup |
+|---|---|---|
+| without live notes | 12.8 min | — |
+| **with live notes on** | **7.0 min** | **1.84x** |
+
+Both produced equivalent notes (38 vs 37 points). Live notes do the per-window
+MAP work *during* the lesson, so only the final minutes and the merge are left
+once the class ends.
+
+Scaling by window count, a full 60-minute class is roughly **18 minutes**
+without live notes and **10 minutes** with. The remaining time is the merge
+step, which cannot start until the class is over.
+
+Component costs, for reference:
 
 | step | cost |
 |---|---|
 | one MAP window | 13 s |
 | one REDUCE (20 points) | 79 s |
-| REDUCE of a whole class (~48 points, batched) | 200 s |
 
-That gives the wait **after the bell**:
-
-| | model calls | time |
-|---|---|---|
-| without live notes | 20 MAP + reduce | **~8 min** |
-| with live notes on | 3 MAP + reduce | **~4 min** |
-
-Live notes do the MAP work during the lesson, so only the last few minutes are
-left over. The remaining time is REDUCE, which cannot start until the class
-ends. Transcription itself keeps up live for English.
+If that wait matters, record with `notes later` and run `notes catchup` once
+for the whole day rather than waiting after each period.
 
 ---
 
@@ -345,8 +351,13 @@ ends. Transcription itself keeps up live for English.
   place of a real word. Check anything that matters against the transcript.
 - **System audio captures everything you can hear.** Mute unrelated tabs before
   recording an online class, or you will get their content in your notes.
-- Summarizing is CPU-bound and will make the laptop warm. For back-to-back
-  periods use `notes later` and run `notes catchup` once, after school.
+- **Notes do not appear the moment class ends.** Merging a full class takes
+  roughly 10 minutes on this CPU with live notes on, or 18 without. That is
+  longer than a break, so do not stand waiting for it. Either walk away and
+  read the notes later, or use `notes later` and write up the whole day at
+  once with `notes catchup`.
+- Summarizing is CPU-bound and will make the laptop warm. A faster machine, or
+  a smaller model via `--summary-model`, cuts the wait proportionally.
 - **Recordings are never deleted.** A one-hour class keeps about 115 MB of
   audio so `--hq` re-runs stay possible. Delete old sessions yourself from
   `~/.local/share/notetaker/sessions/` if space runs short.
