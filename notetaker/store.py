@@ -6,7 +6,8 @@ A SQLite table indexes sessions; the bulky artifacts live on disk beside it:
         notetaker.db
         sessions/<id>/
             audio.wav          full recording (enables --hq re-runs)
-            chunks/            transient, removed after processing
+            chunks/            transient; kept only if ASR was cut short,
+                               which marks the transcript as partial
             transcript.jsonl   appended live, crash-safe
             notes.md           key-idea summary
 
@@ -82,6 +83,23 @@ class Session:
     @property
     def notes_path(self) -> Path:
         return self.directory / "notes.md"
+
+    @property
+    def chunks_dir(self) -> Path:
+        return self.directory / "chunks"
+
+    @property
+    def transcript_is_partial(self) -> bool:
+        """True when transcription was cut short and audio is still unread.
+
+        Leftover chunks are the marker: they are deleted on a clean finish, so
+        their presence means the ASR worker never caught up. The transcript on
+        disk therefore covers only part of the class, and summarizing it as-is
+        would quietly drop the rest.
+        """
+        if not self.chunks_dir.is_dir():
+            return False
+        return any(self.chunks_dir.glob("chunk_*.wav"))
 
     @property
     def is_complete(self) -> bool:
@@ -274,7 +292,9 @@ def pending_sessions(db_path: Path | None = None) -> list[Session]:
     """
     pending = []
     for session in list_sessions(db_path=db_path):
-        if session.has_notes and session.notes_path.exists():
+        # A class whose transcription was cut short still needs finishing even
+        # if notes exist: those notes only cover the part that was transcribed.
+        if session.has_notes and session.notes_path.exists() and not session.transcript_is_partial:
             continue
         # Needs something to work from: either audio to transcribe, or a
         # transcript to summarize. A session with neither is not recoverable.

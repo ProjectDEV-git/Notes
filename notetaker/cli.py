@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -428,15 +429,33 @@ def cmd_catchup(args: argparse.Namespace) -> int:
         echo(f"[bold]({index}/{len(pending)})[/bold] {session.title} [dim]{session.id}[/dim]")
 
         segments = store.load_transcript(session)
-        if not segments:
-            if not session.audio_path.exists():
-                echo("  [yellow]no sound and no transcript, skipping[/yellow]")
-                failed += 1
-                continue
+        have_audio = session.audio_path.exists()
+        # A transcript cut short is worse than none: summarizing it looks like
+        # success while quietly dropping the rest of the class. The full audio
+        # is always written, so redo the transcription from that.
+        partial = session.transcript_is_partial
+
+        if not segments and not have_audio:
+            echo("  [yellow]no sound and no transcript, skipping[/yellow]")
+            failed += 1
+            continue
+
+        if partial and not have_audio:
+            # Nothing better survives; say so rather than implying it is whole.
+            echo("  [yellow]the recording is gone, so only the part that was "
+                 "transcribed can be written up[/yellow]")
+        elif not segments or partial:
+            if partial:
+                echo(f"  [yellow]transcription was cut short last time "
+                     f"({len(segments)} segments); redoing it from the full "
+                     f"recording[/yellow]")
             echo(f"  [dim]transcribing the recording ({args.model})...[/dim]")
             try:
                 transcriber = Transcriber(args.model, language=session.language)
                 segments = transcriber.transcribe_file(session.audio_path)
+                # Replace rather than append: the old transcript is a prefix of
+                # this one, so appending would duplicate the start of the class.
+                session.transcript_path.write_text("", encoding="utf-8")
                 with TranscriptWriter(session.transcript_path) as writer:
                     writer.write(segments)
                 # A session recorded with --later has no detected language yet.
@@ -446,6 +465,8 @@ def cmd_catchup(args: argparse.Namespace) -> int:
                     language=transcriber.language,
                 )
                 session = store.get_session(session.id) or session
+                # The chunks have now been superseded by a full transcript.
+                shutil.rmtree(session.chunks_dir, ignore_errors=True)
             except Exception as exc:
                 echo(f"  [red]could not transcribe:[/red] {exc}")
                 failed += 1

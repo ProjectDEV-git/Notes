@@ -13,6 +13,7 @@ Three things break at that length and are verified here:
 
 from __future__ import annotations
 
+import shutil
 import threading
 
 import pytest
@@ -211,3 +212,127 @@ def test_reduce_terminates_when_the_model_echoes_its_input(monkeypatch):
 
     monkeypatch.setattr(S, "chat", fake_chat)
     S.reduce_points(_points(80), "en", "stub")
+
+
+# ------------------------------------------- recovering a cut-short class
+def _cut_short(tmp_path, monkeypatch, *, audio=True, notes=False):
+    """A class whose ASR worker was cut short: partial transcript + chunks."""
+    from notetaker.asr import TranscriptWriter
+
+    data = tmp_path / "data"
+    (data / "sessions").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(config, "DATA_DIR", data)
+    monkeypatch.setattr(config, "SESSIONS_DIR", data / "sessions")
+    monkeypatch.setattr(config, "DB_PATH", data / "notetaker.db")
+
+    session = store.create_session("Biology period 3", config.SOURCE_MIC)
+    session.directory.mkdir(parents=True, exist_ok=True)
+    if audio:
+        session.audio_path.write_bytes(b"RIFF")
+    session.chunks_dir.mkdir(exist_ok=True)
+    (session.chunks_dir / "chunk_00001.wav").write_bytes(b"RIFF")
+    with TranscriptWriter(session.transcript_path) as writer:
+        writer.write([Segment(0.0, 3.0, "only the first part", "en", 0)])
+    if notes:
+        store.write_notes(session, "## What we learned\n- only the first part\n")
+    store.finish_session(session.id, duration=3600.0, language="en")
+    return store.get_session(session.id)
+
+
+def test_leftover_chunks_mark_a_transcript_as_partial(tmp_path, monkeypatch):
+    """Chunks are deleted on a clean finish, so their presence is the signal."""
+    session = _cut_short(tmp_path, monkeypatch)
+    assert session.transcript_is_partial
+
+
+def test_a_complete_class_is_not_marked_partial(tmp_path, monkeypatch):
+    session = _cut_short(tmp_path, monkeypatch)
+    shutil.rmtree(session.chunks_dir)
+    assert not store.get_session(session.id).transcript_is_partial
+
+
+def test_a_partial_class_is_offered_even_when_it_has_notes(tmp_path, monkeypatch):
+    """Those notes cover only the part that was transcribed.
+
+    Without this, 'Nothing is lost, run notes catchup' is a false promise:
+    catchup would summarize the truncated transcript and report success.
+    """
+    _cut_short(tmp_path, monkeypatch, notes=True)
+    assert [s.title for s in store.pending_sessions()] == ["Biology period 3"]
+
+
+def test_catchup_redoes_a_partial_transcript_from_the_audio(tmp_path, monkeypatch):
+    """The whole point: recover the rest of the class, not just re-summarize."""
+    from notetaker import cli
+
+    session = _cut_short(tmp_path, monkeypatch)
+    transcribed = {"called": False}
+
+    class FakeTranscriber:
+        language = "en"
+
+        def __init__(self, *a, **k):
+            pass
+
+        def transcribe_file(self, path):
+            transcribed["called"] = True
+            return [
+                Segment(0.0, 3.0, "only the first part", "en", 0),
+                Segment(3.0, 6.0, "and the rest of the class", "en", 0),
+            ]
+
+    monkeypatch.setattr(cli, "Transcriber", FakeTranscriber)
+    monkeypatch.setattr(cli.summarize, "ollama_available", lambda: True)
+    monkeypatch.setattr(
+        cli.summarize, "summarize_segments",
+        lambda *a, **k: cli.summarize.Notes(markdown="## What we learned\n- all of it\n"),
+    )
+
+    assert cli.main(["catchup"]) == 0
+    assert transcribed["called"], "summarized the truncated transcript instead"
+
+    from notetaker.asr import read_transcript
+    assert len(read_transcript(session.transcript_path)) == 2
+    assert not store.get_session(session.id).transcript_is_partial
+    assert store.pending_sessions() == []
+
+
+def test_the_recovered_transcript_does_not_duplicate_the_start(tmp_path, monkeypatch):
+    """The old transcript is a prefix of the new one; appending would repeat it."""
+    from notetaker import cli
+    from notetaker.asr import read_transcript
+
+    session = _cut_short(tmp_path, monkeypatch)
+
+    class FakeTranscriber:
+        language = "en"
+
+        def __init__(self, *a, **k):
+            pass
+
+        def transcribe_file(self, path):
+            return [Segment(0.0, 3.0, "only the first part", "en", 0)]
+
+    monkeypatch.setattr(cli, "Transcriber", FakeTranscriber)
+    monkeypatch.setattr(cli.summarize, "ollama_available", lambda: True)
+    monkeypatch.setattr(
+        cli.summarize, "summarize_segments",
+        lambda *a, **k: cli.summarize.Notes(markdown="## What we learned\n- x\n"),
+    )
+    cli.main(["catchup"])
+
+    texts = [s.text for s in read_transcript(session.transcript_path)]
+    assert texts == ["only the first part"], f"start was duplicated: {texts}"
+
+
+def test_a_partial_class_with_no_audio_is_still_written_up(tmp_path, monkeypatch):
+    """Losing the recording must not also lose the part that was transcribed."""
+    from notetaker import cli
+
+    _cut_short(tmp_path, monkeypatch, audio=False)
+    monkeypatch.setattr(cli.summarize, "ollama_available", lambda: True)
+    monkeypatch.setattr(
+        cli.summarize, "summarize_segments",
+        lambda *a, **k: cli.summarize.Notes(markdown="## What we learned\n- partial\n"),
+    )
+    assert cli.main(["catchup"]) == 0

@@ -84,8 +84,10 @@ notes catchup    # after school: transcribes and writes up everything
 ```
 
 `notes catchup` is also the recovery path. If Ollama was not running, or
-transcription could not keep up, the class is picked up here rather than lost.
-The menu tells you when classes are waiting.
+transcription could not keep up and stopped part-way, the class is picked up
+here rather than lost: a transcript that was cut short is redone from the full
+recording, so you get the whole class and not just the start. The menu tells
+you when classes are waiting.
 
 Anything else is passed to the full CLI:
 
