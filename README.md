@@ -34,8 +34,8 @@ notes            # opens a menu: pick a number, press Enter
 ```
   1. Record the class I am in — uses the microphone
   2. Record an online class — Zoom, Teams, YouTube
-  3. Read my notes — from a past lecture
-  4. Write notes for a past lecture — if they are missing
+  3. Read my notes — from a past class
+  4. Write notes for a past class — if they are missing
   5. Save notes to a file — to share or print
   6. Write up everything I have not done — after school
   7. Record now, write notes later — saves battery in class
@@ -178,36 +178,53 @@ note-writing actually work.
 ./install.sh --no-install   # only check, install nothing
 ```
 
-### Update NoteTaker
+### Staying up to date
 
-After the initial install, update from the configured Git repository with:
+NoteTaker updates itself when you start it. There is nothing to run.
 
 ```bash
-notes update
+notes update              # update right now
+NOTES_AUTO_UPDATE=0 notes # skip the check this once
 ```
 
-Updates use a fast-forward-only Git pull, so local commits and uncommitted
-changes are never overwritten. Commit or stash local changes first if the
-command reports a dirty checkout. The update also refreshes Python packages;
-system tools such as ffmpeg and Ollama are left unchanged.
+Updates are fast-forward only, so local commits and uncommitted changes are
+never overwritten: a modified checkout is left completely alone. System tools
+such as ffmpeg and Ollama are never touched.
+
+Every step is time-limited, so a captive portal or dead wifi costs a few
+seconds and then gets out of the way. **An update can never stop you
+recording a class.**
 
 Already have your own setup? `notes check` tells you what is missing and the
 exact command to fix it.
 
 The Whisper model downloads itself on first run (~500 MB).
 
-**On macOS**, recording an *online* lecture needs a loopback driver, because
-CoreAudio has no way to capture what the speakers are playing. `install.sh`
-offers to install BlackHole for you; otherwise:
+### On a Mac
+
+Run the same `./install.sh`. It installs Homebrew for you if the Mac does not
+have it, and finds an existing one whether it lives in `/opt/homebrew` (Apple
+Silicon) or `/usr/local` (Intel).
+
+Two Mac-only things are worth knowing:
+
+**Microphone permission.** The first recording asks for it. You have to say
+yes, or every class records silence. If you have already said no, macOS will
+not ask again: turn it on under
+*System Settings > Privacy & Security > Microphone* and tick your terminal.
+
+**Online classes need a loopback driver.** Recording a class you are sitting
+in works straight away. Only *online* classes need this, because CoreAudio
+cannot capture what the speakers are playing. The installer offers it;
+otherwise:
 
 ```bash
 brew install --cask blackhole-2ch
 ```
 
-Either way, in **Audio MIDI Setup** create a Multi-Output Device combining BlackHole
-with your speakers, and select it as the output, so you still hear the lecture
-while it is recorded. The first recording asks for Microphone permission for
-your terminal.
+Then in **Audio MIDI Setup** create a Multi-Output Device combining BlackHole
+with your speakers and select it as the output, so you still hear the class
+while it records.
 
 ---
 
@@ -291,8 +308,27 @@ Every claim in the notes was checked against the transcript and none was
 fabricated: the first-cause discussion, the physics/metaphysics split, and the
 exoteric works "lacking literary value" were all genuinely said.
 
-Extrapolating, a 50-minute lecture takes roughly 15-20 minutes to summarize
-after class. Transcription itself happens live.
+### Measured on a full 60-minute class
+
+A one-hour class is 20 map-reduce windows. Measured on this CPU with
+`llama3.2:3b`:
+
+| step | cost |
+|---|---|
+| one MAP window | 13 s |
+| one REDUCE (20 points) | 79 s |
+| REDUCE of a whole class (~48 points, batched) | 200 s |
+
+That gives the wait **after the bell**:
+
+| | model calls | time |
+|---|---|---|
+| without live notes | 20 MAP + reduce | **~8 min** |
+| with live notes on | 3 MAP + reduce | **~4 min** |
+
+Live notes do the MAP work during the lesson, so only the last few minutes are
+left over. The remaining time is REDUCE, which cannot start until the class
+ends. Transcription itself keeps up live for English.
 
 ---
 

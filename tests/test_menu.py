@@ -286,3 +286,19 @@ def test_check_exits_nonzero_when_something_is_missing():
     broken = [menu.Check("ffmpeg", False, "missing", "install it")]
     with patch("notetaker.menu.run_checks", return_value=broken):
         assert cli.main(["check"]) == 1
+
+
+# ------------------------------------------------------- docs match reality
+def test_readme_menu_matches_the_real_menu():
+    """A README that lists different options than the app is worse than none."""
+    import re
+    from pathlib import Path
+
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
+    block = re.search(r"```\n(  1\. Record the class.*?)```", readme, re.S)
+    assert block, "the README no longer shows the menu"
+
+    documented = [line.rstrip() for line in block.group(1).splitlines()
+                  if line.strip() and not line.strip().startswith("q.")]
+    actual = [f"  {o.key}. {o.label} — {o.hint}" for o in menu.options()]
+    assert documented == actual
