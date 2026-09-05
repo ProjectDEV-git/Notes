@@ -301,6 +301,19 @@ def pick_class_length() -> int:
     return config.DEFAULT_CLASS_MINUTES
 
 
+def pick_level() -> str:
+    """Who the notes are written for. Only asked under 'more options'.
+
+    Most people want the school default, so this never appears in the common
+    path; it exists so an older student is not forced onto the command line.
+    """
+    out("\n[bold]Who are the notes for?[/bold]")
+    out("  [bold]1[/bold]. A school student [dim](simple wording, new words explained)[/dim]")
+    out("  [bold]2[/bold]. A university student [dim](denser, assumes more)[/dim]")
+    answer = ask("\nNumber (Enter = school): ", "1")
+    return "university" if answer == "2" else "school"
+
+
 # --------------------------------------------------------------------------
 # Menu
 # --------------------------------------------------------------------------
@@ -338,14 +351,16 @@ def _record(source: str) -> int:
 
 def _record_with_options() -> int:
     language = pick_language()
+    level = pick_level()
     title = pick_subject()
     minutes = pick_class_length()
-    online = confirm("\nIs this an online lecture (Zoom/Teams/YouTube)?", default=False)
+    online = confirm("\nIs this an online class (Zoom/Teams/YouTube)?", default=False)
     argv = [
         "record",
         "--source", config.SOURCE_SYSTEM if online else config.SOURCE_MIC,
         "--live-notes",
         "--lang", language,
+        "--level", level,
     ]
     if title:
         argv += ["--title", title]
@@ -427,7 +442,7 @@ def options() -> list[Option]:
         Option("6", "Write up everything I have not done", "after school", _catchup),
         Option("7", "Record now, write notes later", "saves battery in class",
                _record_later),
-        Option("8", "Record with more options", "language, title, source",
+        Option("8", "Record with more options", "language, length, reading level",
                _record_with_options),
         Option("9", "Check that everything works", "microphone, notes writer", _check),
     ]

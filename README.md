@@ -39,7 +39,7 @@ notes            # opens a menu: pick a number, press Enter
   5. Save notes to a file — to share or print
   6. Write up everything I have not done — after school
   7. Record now, write notes later — saves battery in class
-  8. Record with more options — language, title, source
+  8. Record with more options — language, length, reading level
   9. Check that everything works — microphone, notes writer
 ```
 
