@@ -254,3 +254,17 @@ def test_narration_is_also_stripped_from_final_notes():
     )
     assert "teacher talked" not in cleaned
     assert "Plants use sunlight to make food" in cleaned
+
+
+def test_reduce_is_told_to_drop_bad_definitions():
+    """A wrong definition is worse than a missing one, in both languages.
+
+    Transcription errors reach the notes as invented vocabulary ("Neers — book
+    with a hard cover" came from a mis-heard word in a real run). The map stage
+    guard alone does not catch these, so reduce must prune them too.
+    """
+    for code in ("en", "th"):
+        reduce_prompt = languages.get(code).prompts("school")["reduce"]
+        assert "{text}" in reduce_prompt
+    assert "worse than a missing one" in languages.get("en").prompts("school")["reduce"]
+    assert "แย่กว่าไม่มีนิยาม" in languages.get("th").prompts("school")["reduce"]
