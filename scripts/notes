@@ -41,8 +41,12 @@ auto_update() {
     status="$(cd "$APP_DIR" && git status --porcelain 2>/dev/null || true)"
     [[ -n "$status" ]] && return 0
 
+    # The real reason is already printed by the update command; this only adds
+    # what to do next. Never say "skipped": a failed dependency refresh happens
+    # after the code has already changed, and claiming nothing happened would
+    # send the user looking in the wrong place.
     if ! (cd "$APP_DIR" && "$PY" -m notetaker.cli update --quiet); then
-        echo "NoteTaker update was skipped; run 'notes update' to retry." >&2
+        echo "Continuing without updating. Run 'notes update' later to retry." >&2
     fi
 }
 

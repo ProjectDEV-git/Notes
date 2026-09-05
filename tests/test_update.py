@@ -84,3 +84,23 @@ def test_an_up_to_date_checkout_does_not_pay_for_pip(monkeypatch, tmp_path):
 
     assert changed is False
     assert not any("pip" in c for c in commands), "reinstalled dependencies for nothing"
+
+
+def test_a_failed_update_never_stops_the_app_from_running(tmp_path):
+    """A student with bad wifi must still be able to record."""
+    import subprocess as sp
+    from pathlib import Path
+
+    launcher = Path(__file__).resolve().parent.parent / "scripts" / "notes"
+    traced = launcher.read_text().replace('exec "$PY" -m notetaker.cli', "echo CLI")
+    # Force the update step to fail outright.
+    traced = traced.replace('"$PY" -m notetaker.cli update --quiet', "false")
+    # The dirty-checkout guard would otherwise return before the update runs,
+    # and this test is about what happens when the update itself fails.
+    traced = traced.replace("git status --porcelain 2>/dev/null", "true")
+    script = tmp_path / "notes"
+    script.write_text(traced)
+
+    result = sp.run(["bash", str(script), "all"], capture_output=True, text=True, timeout=60)
+    assert "CLI list" in result.stdout, "a failed update blocked the app"
+    assert "notes update" in result.stderr, "the user was not told how to retry"
