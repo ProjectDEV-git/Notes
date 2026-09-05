@@ -216,9 +216,9 @@ def pick_session(action: str = "open", limit: int = 10) -> store.Session | None:
 
 
 def pick_language() -> str:
-    """Ask for the lecture language, defaulting to autodetect."""
+    """Ask for the class language, defaulting to autodetect."""
     codes = list(config.supported_languages())
-    out("\n[bold]What language is the lecture in?[/bold]")
+    out("\n[bold]What language is the class in?[/bold]")
     out("  [bold]1[/bold]. Detect automatically [dim](recommended)[/dim]")
     for index, code in enumerate(codes, start=2):
         out(f"  [bold]{index}[/bold]. {code}")
@@ -452,14 +452,14 @@ def show_menu() -> int:
     if console:
         console.print(
             Panel(
-                "Record a lecture and get the key ideas written down.\n"
+                "Record a class and get the key ideas written down.\n"
                 "[dim]Everything runs on this computer. Nothing is uploaded.[/dim]",
                 title="NoteTaker",
                 border_style="blue",
             )
         )
     else:
-        print("NoteTaker - record a lecture and get the key ideas written down.\n")
+        print("NoteTaker - record a class and get the key ideas written down.\n")
 
     items = options()
     for option in items:

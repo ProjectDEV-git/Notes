@@ -130,14 +130,18 @@ The facts do not change with the level. Numbers, units and formulas are copied
 exactly at both settings, and inventing homework that was never set is
 forbidden at both.
 
+Pick **8. Record with more options** in the menu to change it for one class,
+or use the command line:
+
 ```bash
 notes summarize physics --rerun --level university   # denser, assumes more
 export NOTETAKER_NOTES_LEVEL=university              # make it the default
 ```
 
-Adding a language? A pack can carry its own school prompts (`map_school`,
-`reduce_school`). A pack without them simply uses its normal prompts, so
-nothing you have already written needs changing.
+Adding a language? A pack can carry its own school prompts and headings
+(`map_school`, `reduce_school`, `key_ideas_school`, ...). A pack without them
+simply uses its normal ones, so nothing you have already written needs
+changing. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
 
 ## Languages
 
