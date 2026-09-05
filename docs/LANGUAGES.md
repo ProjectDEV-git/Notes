@@ -76,6 +76,43 @@ empty notes.
 `notetaker lang add` fills in `script_range` automatically for the unspaced
 languages it knows about.
 
+## Writing for school students
+
+Notes are written for a secondary school student by default. A pack can carry
+a second, simpler set of prompts and headings for that, and **everything here
+is optional**: a pack without them uses its normal prompts and headings at
+both levels, so nothing you have already written needs changing.
+
+```json
+{
+  "headings": {
+    "key_ideas": "## 要点",
+    "key_ideas_school": "## 今日ならったこと",
+    "terms": "## 用語と定義",
+    "terms_school": "## おぼえる言葉",
+    "action_items": "## やるべきこと",
+    "action_items_school": "## 宿題とれんらく"
+  },
+  "prompts": {
+    "map": "... {text}",
+    "map_school": "... {text}",
+    "reduce": "... {text}",
+    "reduce_school": "... {text}"
+  }
+}
+```
+
+Two rules make the school prompts worth having:
+
+- **Define new words**, because the student is meeting them for the first
+  time. Say to skip anything the model cannot define without guessing, or a
+  mis-heard word arrives looking like real vocabulary.
+- **Name the section headings in `reduce_school` exactly** as you wrote them
+  under `headings`. A heading the prompt never mentions cannot be produced,
+  and cannot be stripped when it is empty.
+
+`--level university` uses the plain `map` and `reduce` prompts instead.
+
 ## Writing prompts that work
 
 The built-in English prompts were tuned against real lectures. Keep these

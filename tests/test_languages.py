@@ -207,3 +207,37 @@ def test_lang_remove_of_a_builtin_leaves_it_usable(lang_dir, capsys):
 
 def test_lang_remove_unknown_fails_cleanly(lang_dir, capsys):
     assert cli.cmd_lang(cli.build_parser().parse_args(["lang", "remove", "ja"])) == 1
+
+
+def test_the_documented_school_pack_actually_loads():
+    """docs/LANGUAGES.md shows a pack with school prompts and headings.
+
+    A documented example that does not load is worse than no example: it costs
+    the reader time before they discover it was never true.
+    """
+    from notetaker import languages as L
+
+    documented = {
+        "name": "日本語",
+        "headings": {
+            "key_ideas": "## 要点", "key_ideas_school": "## 今日ならったこと",
+            "terms": "## 用語と定義", "terms_school": "## おぼえる言葉",
+            "action_items": "## やるべきこと", "action_items_school": "## 宿題とれんらく",
+        },
+        "prompts": {
+            "map": "m {text}", "map_school": "ms {text}",
+            "reduce": "r {text}", "reduce_school": "rs {text}",
+        },
+    }
+    pack = L.Language.from_dict("ja", documented)
+
+    assert pack.heading_for_key_ideas("school") == "## 今日ならったこと"
+    assert pack.heading_for_terms("school") == "## おぼえる言葉"
+    assert pack.heading_for_actions("school") == "## 宿題とれんらく"
+    assert pack.prompts("school")["map"] == "ms {text}"
+    assert pack.prompts("university")["map"] == "m {text}"
+
+    # And it must survive being written out and read back.
+    again = L.Language.from_dict("ja", pack.to_dict())
+    assert again.heading_for_key_ideas("school") == "## 今日ならったこと"
+    assert again.prompts("school")["reduce"] == "rs {text}"
