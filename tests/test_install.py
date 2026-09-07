@@ -450,3 +450,39 @@ def test_the_readme_curl_url_points_at_this_repos_install_script():
         f"README fetches from {owner}/{repo_name} but install.sh clones {clone_url}"
     )
     assert branch == "main", f"README points at branch {branch!r}"
+
+
+def test_help_works_when_piped_from_curl(sandbox):
+    """It read its own source with sed "$0", which is 'bash' when piped."""
+    result = _piped(sandbox, "--help")
+    assert result.returncode == 0
+    assert "sed:" not in result.stderr
+    assert "install everything" in result.stdout
+
+
+def test_help_still_works_from_a_checkout(sandbox):
+    result = run_installer(sandbox, "--help")
+    assert result.returncode == 0
+    assert "install everything" in result.stdout
+
+
+def test_help_shows_the_same_url_as_the_readme():
+    """Help text is where a confused user looks; a stale URL there is a trap.
+
+    Only NoteTaker's own URL is checked. install.sh also fetches Homebrew's
+    installer, which has no business being in this README.
+    """
+    import re
+
+    script = INSTALL.read_text()
+    readme = (REPO / "README.md").read_text()
+
+    repo_url = re.search(r"NOTETAKER_REPO:-\S*?github\.com/([^/]+/[^/.]+)", script)
+    assert repo_url, "install.sh no longer declares a default repo"
+    owner_repo = repo_url.group(1)
+
+    ours = [u for u in re.findall(r"https://raw\.githubusercontent\.com/\S+/install\.sh", script)
+            if owner_repo in u]
+    assert ours, "the help text no longer shows the one-line install"
+    for url in ours:
+        assert url in readme, f"install.sh --help shows {url}, absent from the README"

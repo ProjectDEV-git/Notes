@@ -32,7 +32,25 @@ for arg in "$@"; do
         -y|--yes)        ASSUME_YES=1 ;;
         --no-install)    NO_INSTALL=1 ;;
         -h|--help)
-            sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+            # Printed literally rather than read back out of this file: piped
+            # from curl there is no file, and $0 is just "bash".
+            cat <<'USAGE'
+Set up NoteTaker completely: dependencies, Ollama, the summary model, and
+the one-word `notes` command.
+
+  ./install.sh              install everything, asking before each step
+  ./install.sh --yes        install everything without asking
+  ./install.sh --no-install only check, never install
+
+Anything that needs root is run with sudo and printed first, so nothing
+happens to the machine without the user seeing the exact command.
+
+Run without a checkout, NoteTaker is downloaded to ~/NoteTaker first:
+
+  curl -fsSL https://raw.githubusercontent.com/ProjectDEV-git/Notes/main/install.sh | bash
+
+  NOTETAKER_DIR=~/elsewhere   put the checkout somewhere else
+USAGE
             exit 0
             ;;
         *) echo "unknown option: $arg" >&2; exit 2 ;;
