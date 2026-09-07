@@ -353,3 +353,100 @@ def test_mac_does_not_claim_in_person_recording_needs_a_driver(sandbox):
     # The reassurance must come before the driver talk, not after it.
     section = out[marker:marker + 400]
     assert section.index("no extra driver") < section.index("ONLINE")
+
+
+# ------------------------------------------------------ the one-line install
+def _piped(sandbox, *args, extra_env=None):
+    """Run install.sh the way `curl ... | bash` does: no file on disk."""
+    bin_dir, home = sandbox
+    env = {
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "HOME": str(home),
+        "SHELL": "/bin/bash",
+        "OLLAMA_URL": "http://127.0.0.1:9",
+    }
+    env.update(extra_env or {})
+    return subprocess.run(
+        ["bash", "-s", "--", *args],
+        input=INSTALL.read_text(),
+        capture_output=True, text=True, timeout=300, env=env,
+    )
+
+
+def test_piped_install_does_not_crash_on_unset_bash_source(sandbox):
+    """`curl | bash` leaves BASH_SOURCE unset; set -u used to abort on it."""
+    result = _piped(sandbox, "--no-install",
+                    extra_env={"NOTETAKER_REPO": "https://127.0.0.1:9/x.git"})
+    assert "unbound variable" not in result.stderr
+
+
+def test_piped_install_does_not_use_the_current_directory(sandbox, tmp_path):
+    """It used to install into wherever the user happened to be standing."""
+    result = _piped(sandbox, "--no-install",
+                    extra_env={"NOTETAKER_REPO": "https://127.0.0.1:9/x.git"})
+    out = result.stdout + result.stderr
+    assert "Getting NoteTaker" in out, "did not try to fetch a checkout"
+
+
+def test_piped_install_refuses_to_touch_an_unrelated_directory(sandbox):
+    """A directory that is not a checkout must be left completely alone."""
+    bin_dir, home = sandbox
+    target = home / "NoteTaker"
+    target.mkdir()
+    keeper = target / "myfile.txt"
+    keeper.write_text("important user data")
+
+    result = _piped(sandbox, "--no-install",
+                    extra_env={"NOTETAKER_DIR": str(target)})
+
+    assert "already exists" in (result.stdout + result.stderr)
+    assert keeper.read_text() == "important user data"
+    assert [p.name for p in target.iterdir()] == ["myfile.txt"]
+
+
+def test_piped_install_says_so_when_git_is_missing(sandbox):
+    """Without git there is no way to fetch anything; say that plainly."""
+    bin_dir, home = sandbox
+    env = {"PATH": str(bin_dir), "HOME": str(home), "SHELL": "/bin/bash"}
+    result = subprocess.run(
+        ["bash", "-s", "--", "--no-install"],
+        input=INSTALL.read_text(),
+        capture_output=True, text=True, timeout=120, env=env,
+    )
+    out = result.stdout + result.stderr
+    assert "git is needed" in out
+
+
+def test_the_repo_url_matches_the_one_in_the_readme():
+    """A one-line install pointing at the wrong repo installs the wrong thing."""
+    import re
+
+    readme = (REPO / "README.md").read_text()
+    script = INSTALL.read_text()
+
+    in_script = re.search(r'NOTETAKER_REPO:-([^}]+)\}', script)
+    assert in_script, "install.sh no longer declares a default repo URL"
+    url = in_script.group(1)
+    assert url in readme, f"install.sh clones {url}, which the README never mentions"
+
+
+def test_the_readme_curl_url_points_at_this_repos_install_script():
+    """The headline instruction is a URL; a wrong one installs nothing.
+
+    Checked offline by construction: the raw URL must name the same repo the
+    script clones, on the branch this checkout is on.
+    """
+    import re
+
+    readme = (REPO / "README.md").read_text()
+    match = re.search(r"https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/install\.sh",
+                      readme)
+    assert match, "the README no longer shows a one-line install URL"
+    owner, repo_name, branch = match.groups()
+
+    script = INSTALL.read_text()
+    clone_url = re.search(r"NOTETAKER_REPO:-([^}]+)\}", script).group(1)
+    assert f"{owner}/{repo_name}" in clone_url, (
+        f"README fetches from {owner}/{repo_name} but install.sh clones {clone_url}"
+    )
+    assert branch == "main", f"README points at branch {branch!r}"

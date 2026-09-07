@@ -170,8 +170,18 @@ Runs on **Linux** (PipeWire/PulseAudio) and **macOS** (AVFoundation).
 One command sets up everything, including ffmpeg, Ollama and the summary model:
 
 ```bash
-git clone https://github.com/ProjectDEV-git/Notes.git NoteTaker && cd NoteTaker
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/ProjectDEV-git/Notes/main/install.sh | bash
+```
+
+That downloads NoteTaker to `~/NoteTaker` and installs it. To put it somewhere
+else, set `NOTETAKER_DIR=~/somewhere-else` first.
+
+Prefer to read the script before running it? Clone first, which is the same
+install either way:
+
+```bash
+git clone https://github.com/ProjectDEV-git/Notes.git ~/NoteTaker
+cd ~/NoteTaker && ./install.sh
 ```
 
 It asks before installing anything and prints every command it runs, including

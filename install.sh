@@ -11,9 +11,19 @@
 
 set -euo pipefail
 
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
 MODEL="llama3.2:3b"
+REPO_URL="${NOTETAKER_REPO:-https://github.com/ProjectDEV-git/Notes.git}"
+
+# Where this script lives. Piped through curl there is no file on disk, so
+# BASH_SOURCE is unset and the checkout has to be fetched first. Without this
+# the one-line install would silently set itself up in whatever directory the
+# user happened to be standing in.
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+    APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    APP_DIR=""
+fi
 
 ASSUME_YES=0
 NO_INSTALL=0
@@ -189,6 +199,43 @@ manual_hint() {
         *)        echo "your package manager's install command for $pkg" ;;
     esac
 }
+
+# --------------------------------------------------------------------------
+# Bootstrap: piped from curl, so there is no checkout yet. Clone one and hand
+# over to the copy inside it, which is the ordinary path from then on.
+# --------------------------------------------------------------------------
+if [[ -z "$APP_DIR" ]]; then
+    TARGET="${NOTETAKER_DIR:-$HOME/NoteTaker}"
+    step "Getting NoteTaker"
+
+    if ! command -v git >/dev/null; then
+        warn "git is needed to download NoteTaker, and is not installed."
+        say "  Install git, then run this again."
+        exit 1
+    fi
+
+    if [[ -d "$TARGET/.git" ]]; then
+        say "  already downloaded to $TARGET, updating it"
+        say "  \$ git -C $TARGET pull --ff-only"
+        git -C "$TARGET" pull --ff-only || warn "could not update; using what is there"
+    elif [[ -e "$TARGET" ]]; then
+        warn "$TARGET already exists and is not a NoteTaker checkout."
+        say "  Move it, or choose somewhere else:"
+        say "    NOTETAKER_DIR=~/somewhere-else  (then run this again)"
+        exit 1
+    else
+        say "  \$ git clone $REPO_URL $TARGET"
+        git clone --quiet "$REPO_URL" "$TARGET" || {
+            warn "could not download NoteTaker from $REPO_URL"
+            exit 1
+        }
+        ok "downloaded to $TARGET"
+    fi
+
+    # Continue in the real script, so there is only one install path to keep
+    # working rather than two that can drift apart.
+    exec bash "$TARGET/install.sh" "$@"
+fi
 
 say "Installing NoteTaker from $APP_DIR"
 (( NO_INSTALL )) && warn "--no-install: checking only, nothing will be installed"
