@@ -46,6 +46,20 @@ def test_record_defaults():
     assert args.lang == "auto"
 
 
+def test_negative_recording_minutes_are_rejected():
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["record", "--minutes", "-1"])
+
+
+def test_zero_recording_minutes_means_until_stopped():
+    assert cli.build_parser().parse_args(["record", "--minutes", "0"]).minutes == 0
+
+
+def test_zero_chunk_seconds_are_rejected():
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["record", "--chunk-seconds", "0"])
+
+
 def test_source_alias_is_accepted():
     assert cli.build_parser().parse_args(["record", "--source", "system"]).source == "system"
 
@@ -144,6 +158,26 @@ def test_show_accepts_a_title_substring(db, capsys):
 def test_unknown_session_fails_cleanly(db, capsys):
     assert cli.cmd_show(cli.build_parser().parse_args(["show", "nope"])) == 1
     assert "no session" in capsys.readouterr().out.lower()
+
+
+def test_failed_recording_start_does_not_leave_a_ghost_session(db, monkeypatch, capsys):
+    from notetaker.audio import AudioSource
+
+    source = AudioSource("stub", "Test microphone", config.SOURCE_MIC)
+    monkeypatch.setattr(cli, "resolve_source", lambda _: source)
+
+    class BrokenPipeline:
+        def __init__(self, **kwargs):
+            pass
+
+        def start(self):
+            raise cli.AudioError("test device is unavailable")
+
+    monkeypatch.setattr(cli, "RecordingPipeline", BrokenPipeline)
+
+    assert cli.cmd_record(cli.build_parser().parse_args(["record", "--title", "Broken"])) == 1
+    assert store.list_sessions() == []
+    assert "test device is unavailable" in capsys.readouterr().out
 
 
 # -------------------------------------------------------------------- export

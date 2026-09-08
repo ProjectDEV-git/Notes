@@ -63,6 +63,25 @@ def format_duration(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
 
 
+def non_negative_int(value: str) -> int:
+    """Parse a duration/count that may be zero, but never negative."""
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a whole number") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be 0 or greater")
+    return parsed
+
+
+def positive_int(value: str) -> int:
+    """Parse a setting that must be greater than zero."""
+    parsed = non_negative_int(value)
+    if parsed == 0:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return parsed
+
+
 def cmd_update(args: argparse.Namespace) -> int:
     """Update the checkout without overwriting local changes."""
     app_dir = Path(__file__).resolve().parent.parent
@@ -218,7 +237,10 @@ def cmd_record(args: argparse.Namespace) -> int:
         echo(f"[dim]loading {args.model} model...[/dim]")
     try:
         pipeline.start()
-    except (AudioError, ValueError) as exc:
+    except (AudioError, ValueError, OSError, ImportError) as exc:
+        # The database row is created before device/model startup so crashes
+        # cannot leave a recording that never actually started in the history.
+        store.delete_session(session.id)
         return fail(str(exc))
 
     stopping = threading.Event()
@@ -725,7 +747,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record.add_argument("--title", "-t", default=None, help="lecture title")
     record.add_argument(
-        "--minutes", "-m", type=int, default=0,
+        "--minutes", "-m", type=non_negative_int, default=0,
         help="stop by itself after this many minutes (a class period). "
              "0 = keep recording until Ctrl-C",
     )
@@ -744,7 +766,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--level", default=config.NOTES_LEVEL, choices=list(config.NOTES_LEVELS),
         help="who the notes are written for. Default: school",
     )
-    record.add_argument("--chunk-seconds", type=int, default=config.CHUNK_SECONDS)
+    record.add_argument("--chunk-seconds", type=positive_int, default=config.CHUNK_SECONDS)
     record.add_argument("--no-summary", action="store_true", help="transcribe only")
     record.add_argument(
         "--later", action="store_true",
@@ -754,13 +776,13 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--plain", action="store_true", help="disable the live display")
 
     listing = subparsers.add_parser("list", help="list past recordings")
-    listing.add_argument("--limit", "-n", type=int, default=20)
+    listing.add_argument("--limit", "-n", type=positive_int, default=20)
 
     catchup = subparsers.add_parser(
         "catchup", help="write notes for every class that does not have them yet"
     )
     catchup.add_argument(
-        "--limit", "-n", type=int, default=0,
+        "--limit", "-n", type=non_negative_int, default=0,
         help="only do this many classes (0 = all of them)",
     )
     catchup.add_argument("--model", default=config.ASR_MODEL, help="whisper model")

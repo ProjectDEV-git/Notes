@@ -25,7 +25,23 @@ no audio ever leaves the laptop.
 
 ## Quick start
 
-One word, and pick from a list. Nothing to remember:
+### First time using NoteTaker?
+
+You do not need to know Python or any command-line options:
+
+1. Install NoteTaker with the one-line installer below. It creates everything
+   in `~/NoteTaker`, including the `notes` command.
+2. Open a **new terminal** (or run `source ~/.bashrc` on Linux).
+3. Run `notes`, choose **9. Check that everything works**, and follow any
+   repair command it prints.
+4. Run `notes` again and choose **1** for an in-person class or **2** for an
+   online class. Press Enter at the questions to use the suggested defaults.
+
+The first recording downloads the speech model (about 500 MB), so allow a few
+minutes before the first class. Keep the terminal open while recording; press
+Ctrl-C when you want to stop early.
+
+After setup, one word opens a list. Nothing to remember:
 
 ```bash
 notes            # opens a menu: pick a number, press Enter
