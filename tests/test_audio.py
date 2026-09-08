@@ -332,3 +332,51 @@ def test_linux_recorder_still_uses_pulse_input(tmp_path):
     cmd = audio.Recorder(src, tmp_path)._build_command()
     expected = "avfoundation" if audio.IS_MACOS else "pulse"
     assert cmd[cmd.index("-f") + 1] == expected
+
+
+# ------------------------------------ following the sink that is actually playing
+def _linux(monkeypatch):
+    """Pretend we are on Linux with PulseAudio, no real hardware touched."""
+    monkeypatch.setattr(audio, "IS_MACOS", False)
+
+
+def _fake_sources(monkeypatch, sources, active_monitor):
+    monkeypatch.setattr(audio, "list_sources", lambda: sources)
+    monkeypatch.setattr(audio, "_default_sink_monitor", lambda: active_monitor)
+
+
+def test_system_source_follows_the_active_sink(monkeypatch):
+    """Listening on Bluetooth mid-lecture must not record the built-in card.
+
+    Picking the wrong monitor records an hour of silence, which is the whole
+    point of resolving the source fresh at record time.
+    """
+    _linux(monkeypatch)
+    builtin = audio.AudioSource("builtin.monitor", "Built-in", config.SOURCE_SYSTEM, is_default=True)
+    bluetooth = audio.AudioSource("bluez.monitor", "Headphones", config.SOURCE_SYSTEM)
+    # The user has switched output to Bluetooth: that sink is now active.
+    _fake_sources(monkeypatch, [builtin, bluetooth], active_monitor="bluez.monitor")
+
+    chosen = audio.resolve_source(config.SOURCE_SYSTEM)
+    assert chosen.name == "bluez.monitor", "recorded the wrong card's monitor"
+
+
+def test_system_source_ignores_stale_default_flag(monkeypatch):
+    """The 'default' flag can lag the real sink; the active monitor wins."""
+    _linux(monkeypatch)
+    builtin = audio.AudioSource("builtin.monitor", "Built-in", config.SOURCE_SYSTEM, is_default=True)
+    hdmi = audio.AudioSource("hdmi.monitor", "TV", config.SOURCE_SYSTEM)
+    _fake_sources(monkeypatch, [builtin, hdmi], active_monitor="hdmi.monitor")
+
+    assert audio.resolve_source(config.SOURCE_SYSTEM).name == "hdmi.monitor"
+
+
+def test_system_source_falls_back_when_active_sink_is_unknown(monkeypatch):
+    """If the active monitor cannot be determined, still pick a usable one."""
+    _linux(monkeypatch)
+    builtin = audio.AudioSource("builtin.monitor", "Built-in", config.SOURCE_SYSTEM, is_default=True)
+    other = audio.AudioSource("other.monitor", "Other", config.SOURCE_SYSTEM)
+    _fake_sources(monkeypatch, [builtin, other], active_monitor=None)
+
+    # No active monitor known: fall back to the default-flagged one.
+    assert audio.resolve_source(config.SOURCE_SYSTEM).name == "builtin.monitor"
