@@ -380,3 +380,25 @@ def test_the_write_notes_menu_entry_asks_for_the_filter():
         menu.main()
     # Maths is the one missing notes; Biology is newer and would win unfiltered.
     assert cli.call_args[0][0] == ["summarize", "b"]
+
+
+# ------------------------------------------ the first-time walkthrough is true
+def test_readme_walkthrough_menu_numbers_are_correct():
+    """The 'First time' steps name option 9 for check, 1 and 2 for recording.
+
+    A walkthrough that points a new user at the wrong number is worse than
+    none: they cannot tell it is wrong, they just get lost.
+    """
+    from pathlib import Path
+
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
+    assert "### First time using NoteTaker?" in readme
+
+    by_key = {o.key: o for o in menu.options()}
+    # Option 9 must be the setup check.
+    assert "everything works" in by_key["9"].label.lower()
+    assert "9. Check that everything works" in readme
+    # Option 1 in person, option 2 online.
+    assert "microphone" in by_key["1"].hint.lower()
+    assert "online" in by_key["2"].label.lower()
+    assert "choose **1** for an in-person class or **2**" in readme

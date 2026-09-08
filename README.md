@@ -31,7 +31,8 @@ You do not need to know Python or any command-line options:
 
 1. Install NoteTaker with the one-line installer below. It creates everything
    in `~/NoteTaker`, including the `notes` command.
-2. Open a **new terminal** (or run `source ~/.bashrc` on Linux).
+2. Open a **new terminal**. (The installer prints the exact `source ...`
+   command for your shell if you would rather not.)
 3. Run `notes`, choose **9. Check that everything works**, and follow any
    repair command it prints.
 4. Run `notes` again and choose **1** for an in-person class or **2** for an
