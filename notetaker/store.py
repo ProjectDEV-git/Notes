@@ -24,9 +24,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from . import config
+from .artifacts import write_text_atomic
 from .asr import Segment, read_transcript
 
 _SCHEMA = """
@@ -265,9 +266,15 @@ def transcript_text(session: Session) -> str:
     return " ".join(s.text for s in load_transcript(session))
 
 
+def write_transcript(session: Session, segments: Iterable[Segment]) -> Path:
+    """Atomically replace a transcript; live recording still uses append writes."""
+    text = "".join(segment.to_json() + "\n" for segment in segments)
+    write_text_atomic(session.transcript_path, text)
+    return session.transcript_path
+
+
 def write_notes(session: Session, markdown: str, db_path: Path | None = None) -> Path:
-    session.directory.mkdir(parents=True, exist_ok=True)
-    session.notes_path.write_text(markdown, encoding="utf-8")
+    write_text_atomic(session.notes_path, markdown)
     mark_notes(session.id, True, db_path=db_path)
     return session.notes_path
 

@@ -6,6 +6,13 @@ to summarize never costs the user their transcript.
 
 from __future__ import annotations
 
+import os
+import re
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from notetaker import cli, config, store
@@ -247,3 +254,77 @@ def test_backlog_flag_trips_when_behind():
     from notetaker.pipeline import PipelineState
 
     assert PipelineState(chunks_done=1, chunks_pending=3).is_falling_behind
+
+
+# ------------------------------------------------------------ 'Start here' guide
+
+
+def _epilog() -> str:
+    return cli.build_parser().format_help()
+
+
+def test_help_contains_start_here_guide_with_copyable_examples():
+    text = _epilog()
+    assert "Start here" in text
+    # Every example must be a copyable module invocation, not bare `notetaker`.
+    assert ".venv/bin/python -m notetaker.cli record --title Physics --source mic --minutes 60" in text
+    assert ".venv/bin/python -m notetaker.cli record --later --title Physics" in text
+    assert ".venv/bin/python -m notetaker.cli catchup" in text
+    assert ".venv/bin/python -m notetaker.cli list" in text
+    assert ".venv/bin/python -m notetaker.cli show Physics" in text
+
+
+def test_examples_do_not_promise_an_exact_stop():
+    text = _epilog()
+    example = re.search(r"--minutes 60.*?\n\s*\n", text, re.S)
+    assert example and "about an hour" in example.group(0)
+
+
+def test_epilog_examples_validate_against_the_parser():
+    """Parse the actual displayed examples, so documentation cannot drift."""
+    prefix = ".venv/bin/python -m notetaker.cli "
+    examples = [
+        shlex.split(line.strip()[len(prefix):])
+        for line in _epilog().splitlines() if line.strip().startswith(prefix)
+    ]
+    parsed = [cli.build_parser().parse_args(argv) for argv in examples]
+    assert {args.command for args in parsed} >= {"menu", "record", "catchup", "list", "show"}
+    assert any(args.command == "record" and args.later for args in parsed)
+    assert any(args.command == "record" and args.minutes > 0 for args in parsed)
+
+
+def test_help_subprocess_exits_zero_without_recording(tmp_path):
+    """Help must not create sessions or require recording/model services."""
+    home, data, settings = (tmp_path / name for name in ("home", "data", "config"))
+    for directory in (home, data, settings):
+        directory.mkdir()
+    env = os.environ.copy()
+    env.update({
+        "HOME": str(home),
+        "XDG_DATA_HOME": str(data),
+        "XDG_CONFIG_HOME": str(settings),
+        "OLLAMA_URL": "http://127.0.0.1:1",
+        "HF_HUB_OFFLINE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    })
+    result = subprocess.run(
+        [sys.executable, "-m", "notetaker.cli", "--help"],
+        capture_output=True, text=True, timeout=15, env=env,
+        cwd=Path(__file__).resolve().parents[1],
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Start here" in result.stdout
+    assert "--minutes" in result.stdout
+    for directory in (home, data, settings):
+        assert list(directory.iterdir()) == []
+
+
+def test_help_does_not_dispatch_a_command(monkeypatch, capsys):
+    def unexpected_dispatch(*args, **kwargs):
+        pytest.fail("help must not dispatch a command")
+
+    monkeypatch.setattr(cli, "COMMANDS", dict.fromkeys(cli.COMMANDS, unexpected_dispatch))
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--help"])
+    assert exc.value.code == 0
+    assert "Start here" in capsys.readouterr().out

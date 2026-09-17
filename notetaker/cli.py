@@ -23,7 +23,7 @@ import threading
 from pathlib import Path
 
 from . import config, store, summarize
-from .asr import Transcriber, TranscriptWriter
+from .asr import Transcriber
 from .audio import AudioError, list_sources, resolve_source
 from .pipeline import RecordingPipeline
 from .update import UpdateError, update_checkout
@@ -425,9 +425,14 @@ def cmd_summarize(args: argparse.Namespace) -> int:
         echo(f"[dim]re-transcribing with {config.ASR_MODEL_HQ} (slower, more accurate)...[/dim]")
         transcriber = Transcriber(config.ASR_MODEL_HQ, language=session.language)
         segments = transcriber.transcribe_file(session.audio_path)
-        session.transcript_path.write_text("", encoding="utf-8")
-        with TranscriptWriter(session.transcript_path) as writer:
-            writer.write(segments)
+        try:
+            store.write_transcript(session, segments)
+        except OSError as exc:
+            return fail(
+                f"could not save transcript: {exc}\n"
+                f"Check free disk space and permissions for {session.directory}, "
+                "then retry with --hq. The original recording is unchanged."
+            )
         echo(f"[dim]{len(segments)} segments[/dim]")
 
     return _summarize_session(session, model=args.model, level=getattr(args, "level", None))
@@ -490,9 +495,16 @@ def cmd_catchup(args: argparse.Namespace) -> int:
                 segments = transcriber.transcribe_file(session.audio_path)
                 # Replace rather than append: the old transcript is a prefix of
                 # this one, so appending would duplicate the start of the class.
-                session.transcript_path.write_text("", encoding="utf-8")
-                with TranscriptWriter(session.transcript_path) as writer:
-                    writer.write(segments)
+                try:
+                    store.write_transcript(session, segments)
+                except OSError as exc:
+                    echo(
+                        f"  [red]could not save transcript:[/red] {exc}\n"
+                        f"  Check free disk space and permissions for {session.directory}, "
+                        "then retry: notes catchup. The original recording is unchanged."
+                    )
+                    failed += 1
+                    continue
                 # A session recorded with --later has no detected language yet.
                 store.finish_session(
                     session.id,
@@ -722,6 +734,33 @@ def cmd_lang(args: argparse.Namespace) -> int:
     return fail("unknown lang command")
 
 
+_HELP_EPILOG = """\
+Start here (run from the project directory):
+
+  .venv/bin/python -m notetaker.cli menu
+      The easiest way in: pick what to do from a numbered list.
+
+  .venv/bin/python -m notetaker.cli record --title Physics --source mic --minutes 60
+      Record the microphone in person; stops by itself after about an hour
+      (--minutes can run a couple of minutes past the limit so the ending
+      is not cut off). Omit --minutes to record until Ctrl-C.
+
+  .venv/bin/python -m notetaker.cli record --later --title Physics
+      Record only, to save battery; transcribe and write the notes later.
+      With no --minutes it keeps recording until you press Ctrl-C;
+      write the notes afterwards with `catchup`.
+
+  .venv/bin/python -m notetaker.cli catchup
+      Write notes for every recording that does not have them yet.
+
+  .venv/bin/python -m notetaker.cli list
+  .venv/bin/python -m notetaker.cli show Physics
+      See past recordings, and read the notes for one. `show Physics`
+      matches part of the title; if you have more than one Physics
+      class, use the id shown by `list` instead.
+"""
+
+
 # --------------------------------------------------------------------------
 # argument parsing
 # --------------------------------------------------------------------------
@@ -729,6 +768,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="notetaker",
         description="Record a lecture, transcribe it, and summarize the key ideas. Runs offline.",
+        epilog=_HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
