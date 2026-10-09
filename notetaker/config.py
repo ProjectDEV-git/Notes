@@ -7,13 +7,21 @@ See docs/BUILD_PLAN.md for the reasoning behind these choices.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 # --------------------------------------------------------------------------
 # Paths (XDG-aware). Recordings live OUTSIDE the repo and are never committed.
 # --------------------------------------------------------------------------
 _xdg_data = os.environ.get("XDG_DATA_HOME")
-DATA_DIR = Path(_xdg_data).expanduser() / "notetaker" if _xdg_data else Path.home() / ".local" / "share" / "notetaker"
+if _xdg_data:
+    DATA_DIR = Path(_xdg_data).expanduser() / "notetaker"
+elif sys.platform == "win32":
+    # %LOCALAPPDATA% stays on this PC: OneDrive does not sync it, so an hour
+    # of audio is not uploaded behind the student's back.
+    DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "NoteTaker"
+else:
+    DATA_DIR = Path.home() / ".local" / "share" / "notetaker"
 SESSIONS_DIR = DATA_DIR / "sessions"
 DB_PATH = DATA_DIR / "notetaker.db"
 
@@ -64,7 +72,9 @@ ASR_MODEL = "small"
 ASR_MODEL_HQ = "large-v3-turbo"  # optional post-lecture high-accuracy re-run
 ASR_DEVICE = "cpu"
 COMPUTE_TYPE = "int8"  # fast CPU path for ctranslate2
-CPU_THREADS = 8  # of 12 available; leave headroom for capture + UI
+# Leave two cores for capture and the display, so a 4-core school laptop does
+# not starve ffmpeg. Override with NOTETAKER_CPU_THREADS.
+CPU_THREADS = int(os.environ.get("NOTETAKER_CPU_THREADS") or max(1, (os.cpu_count() or 4) - 2))
 
 LANGUAGE = None  # None = autodetect. Override with --lang.
 

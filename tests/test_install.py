@@ -44,7 +44,28 @@ def sandbox(tmp_path):
             (bin_dir / tool).symlink_to(real)
     home = tmp_path / "home"
     home.mkdir()
+    _app_copy(tmp_path / "app")
     return bin_dir, home
+
+
+def _app_copy(app: Path) -> Path:
+    """A throwaway checkout, so the installer never writes into this repo.
+
+    The virtualenv is pre-stubbed: its python reports every import as present,
+    so the installer skips pip and the tests never touch the network.
+    """
+    (app / "scripts").mkdir(parents=True)
+    for name in ("install.sh", "requirements.txt", "scripts/notes"):
+        shutil.copy2(REPO / name, app / name)
+    venv_bin = app / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    _stub(venv_bin, "python", "exit 0")
+    _stub(venv_bin, "pip", 'echo "PIP WAS CALLED" >&2; exit 1')
+    return app
+
+
+def _app(sandbox) -> Path:
+    return sandbox[0].parent / "app"
 
 
 def run_installer(sandbox, *args, stdin: str = "", extra_env: dict | None = None):
@@ -56,10 +77,12 @@ def run_installer(sandbox, *args, stdin: str = "", extra_env: dict | None = None
         # Point at a port nothing is listening on, so a real local Ollama
         # cannot make these tests pass by accident.
         "OLLAMA_URL": "http://127.0.0.1:9",
+        # Never read answers from the developer's real terminal.
+        "NOTETAKER_NO_TTY": "1",
     }
     env.update(extra_env or {})
     return subprocess.run(
-        ["bash", str(INSTALL), *args],
+        ["bash", str(_app(sandbox) / "install.sh"), *args],
         input=stdin, capture_output=True, text=True, timeout=300, env=env,
     )
 
@@ -202,7 +225,13 @@ def test_notes_launcher_is_installed_and_points_at_this_checkout(sandbox):
 
     launcher = home / ".local" / "bin" / "notes"
     assert launcher.exists() and os.access(launcher, os.X_OK)
-    assert f'APP_DIR="{REPO}"' in launcher.read_text()
+    assert f'APP_DIR="{_app(sandbox)}"' in launcher.read_text()
+
+
+def test_complete_venv_skips_pip(sandbox):
+    result = run_installer(sandbox, "--no-install")
+    assert "PIP WAS CALLED" not in result.stderr
+    assert "already installed" in result.stdout
 
 
 def test_notes_launcher_checks_for_updates(sandbox):
@@ -364,6 +393,8 @@ def _piped(sandbox, *args, extra_env=None):
         "HOME": str(home),
         "SHELL": "/bin/bash",
         "OLLAMA_URL": "http://127.0.0.1:9",
+        # Never read answers from the developer's real terminal.
+        "NOTETAKER_NO_TTY": "1",
     }
     env.update(extra_env or {})
     return subprocess.run(
@@ -407,7 +438,7 @@ def test_piped_install_refuses_to_touch_an_unrelated_directory(sandbox):
 def test_piped_install_says_so_when_git_is_missing(sandbox):
     """Without git there is no way to fetch anything; say that plainly."""
     bin_dir, home = sandbox
-    env = {"PATH": str(bin_dir), "HOME": str(home), "SHELL": "/bin/bash"}
+    env = {"PATH": str(bin_dir), "HOME": str(home), "SHELL": "/bin/bash", "NOTETAKER_NO_TTY": "1"}
     result = subprocess.run(
         ["bash", "-s", "--", "--no-install"],
         input=INSTALL.read_text(),
@@ -486,3 +517,42 @@ def test_help_shows_the_same_url_as_the_readme():
     assert ours, "the help text no longer shows the one-line install"
     for url in ours:
         assert url in readme, f"install.sh --help shows {url}, absent from the README"
+
+
+# ------------------------------------------------------- macOS for beginners
+def test_mac_explains_helper_apps_in_plain_words(sandbox):
+    """'Install ffmpeg?' means nothing to a student; say what each one is for."""
+    result = run_installer(mac_sandbox(sandbox, brew=False), "--yes")
+    out = result.stdout
+    assert "NoteTaker needs a few free helper apps" in out
+    assert "records the sound" in out
+    assert "writes your notes" in out
+    assert "developer tools" in out, "the Xcode pop-up must not come as a surprise"
+    assert "password" in out
+
+
+def test_mac_no_install_does_not_list_a_plan(sandbox):
+    result = run_installer(mac_sandbox(sandbox, brew=True), "--no-install")
+    assert "helper apps" not in result.stdout
+
+
+def test_mac_puts_an_icon_on_the_desktop(sandbox):
+    """Next time, a double-click instead of a terminal command."""
+    _, home = mac_sandbox(sandbox, brew=True)
+    (home / "Desktop").mkdir()
+    run_installer(sandbox, "--yes")
+    icon = home / "Desktop" / "NoteTaker.command"
+    assert icon.exists() and os.access(icon, os.X_OK)
+    assert "menu" in icon.read_text()
+
+
+def test_mac_points_online_classes_at_the_guided_setup(sandbox):
+    result = run_installer(mac_sandbox(sandbox, brew=True), "--no-install")
+    assert "notes setup-online" in result.stdout
+
+
+def test_double_click_installer_runs_install_sh():
+    command = REPO / "Install NoteTaker.command"
+    assert command.exists() and os.access(command, os.X_OK)
+    assert "install.sh" in command.read_text()
+    assert subprocess.run(["bash", "-n", str(command)]).returncode == 0

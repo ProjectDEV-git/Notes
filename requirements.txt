@@ -2,5 +2,7 @@
 # NOTE: torch is deliberately NOT used. faster-whisper runs on ctranslate2.
 faster-whisper==1.2.1
 ctranslate2==4.8.0
+# faster-whisper 1.2.1 calls av.open(metadata_errors=...), which av 19 removed:
+# with av 19 every transcription fails. Pinned until faster-whisper catches up.
+av>=11,<19
 rich>=13.0
-pytest>=8.0

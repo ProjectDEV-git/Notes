@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -19,11 +20,14 @@ def test_update_refuses_dirty_checkout(monkeypatch, tmp_path):
 
 def test_update_fast_forwards_and_refreshes_dependencies(monkeypatch, tmp_path):
     commands = []
+    heads = iter(["abc\n", "def\n"])
 
     def fake_run(command, cwd, **kwargs):
         commands.append(command)
         if command[:3] == ["git", "status", "--porcelain"]:
             return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        if command[:2] == ["git", "rev-parse"]:
+            return type("Result", (), {"returncode": 0, "stdout": next(heads), "stderr": ""})()
         return type("Result", (), {"returncode": 0, "stdout": "Updating abc..def\n", "stderr": ""})()
 
     monkeypatch.setattr(update.subprocess, "run", fake_run)
@@ -34,7 +38,9 @@ def test_update_fast_forwards_and_refreshes_dependencies(monkeypatch, tmp_path):
     assert "Updating" in message
     assert commands == [
         ["git", "status", "--porcelain"],
+        ["git", "rev-parse", "HEAD"],
         ["git", "pull", "--ff-only"],
+        ["git", "rev-parse", "HEAD"],
         ["python", "-m", "pip", "install", "-q", "-r", "requirements.txt"],
     ]
 
@@ -101,6 +107,45 @@ def test_a_failed_update_never_stops_the_app_from_running(tmp_path):
     script = tmp_path / "notes"
     script.write_text(traced)
 
-    result = sp.run(["bash", str(script), "all"], capture_output=True, text=True, timeout=60)
+    venv_bin = tmp_path / "app" / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (venv_bin / "python").write_text("#!/bin/sh\nexit 0\n")
+    (venv_bin / "python").chmod(0o755)
+    env = {**os.environ, "NOTETAKER_APP_DIR": str(tmp_path / "app"), "NOTES_AUTO_UPDATE": "1"}
+    result = sp.run(["bash", str(script), "all"], capture_output=True, text=True, timeout=60, env=env)
     assert "CLI list" in result.stdout, "a failed update blocked the app"
     assert "notes update" in result.stderr, "the user was not told how to retry"
+
+
+def test_a_translated_git_message_does_not_trigger_pip(monkeypatch, tmp_path):
+    """On a Thai system git does not say "Already up to date"."""
+    commands = []
+
+    def fake_run(command, cwd, **kwargs):
+        commands.append(command)
+        stdout = "abc123\n" if command[:2] == ["git", "rev-parse"] else ""
+        if command[:2] == ["git", "pull"]:
+            stdout = "เป็นปัจจุบันแล้ว\n"
+        return type("R", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+    monkeypatch.setattr(update.subprocess, "run", fake_run)
+    changed, _ = update.update_checkout(tmp_path, Path("python"))
+
+    assert changed is False
+    assert not any("pip" in c for c in commands)
+
+
+def test_a_new_commit_refreshes_dependencies(monkeypatch, tmp_path):
+    heads = iter(["old\n", "new\n"])
+    commands = []
+
+    def fake_run(command, cwd, **kwargs):
+        commands.append(command)
+        stdout = next(heads) if command[:2] == ["git", "rev-parse"] else ""
+        return type("R", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+    monkeypatch.setattr(update.subprocess, "run", fake_run)
+    changed, _ = update.update_checkout(tmp_path, Path("python"))
+
+    assert changed is True
+    assert any("pip" in c for c in commands)

@@ -112,12 +112,23 @@ def cmd_menu(args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     """Verify the machine can record and summarize before a lecture starts."""
-    from .menu import print_checks, run_checks
+    from .menu import ask, print_checks, run_checks
+    from .setup_help import listen_test
 
     ok = print_checks(run_checks())
+    if getattr(args, "listen", False):
+        ok = listen_test(echo, ask) and ok
     if ok:
         echo("\n[green]Everything is ready. You can record a class.[/green]")
     return 0 if ok else 1
+
+
+def cmd_setup_online(args: argparse.Namespace) -> int:
+    """Guided one-time setup so online classes record real sound."""
+    from .menu import ask, confirm
+    from .setup_help import setup_online
+
+    return 0 if setup_online(echo, ask, lambda q: confirm(q, default=True)) else 1
 
 
 def cmd_devices(args: argparse.Namespace) -> int:
@@ -178,6 +189,8 @@ def _render_live(state, source_label: str, live_notes: bool, remaining: float | 
     body.add_row(Text(f"chunks transcribed: {state.chunks_done}", style="dim"))
     if state.warning:
         body.add_row(Text(f"⚠ {state.warning}", style="yellow"))
+    if state.silent_input:
+        body.add_row(Text(f"⚠ {state.silent_input}", style="bold red"))
 
     if state.recent_text:
         body.add_row(Text("\nTranscript", style="bold"))
@@ -273,7 +286,7 @@ def cmd_record(args: argparse.Namespace) -> int:
             with Live(console=console, refresh_per_second=4, transient=False) as live:
                 while not stopping.is_set():
                     left = remaining()
-                    if left is not None and left <= 0:
+                    if (left is not None and left <= 0) or pipeline.state.capture_stopped:
                         break
                     live.update(_render_live(pipeline.state, label, args.live_notes, left))
                     stopping.wait(0.25)
@@ -281,10 +294,16 @@ def cmd_record(args: argparse.Namespace) -> int:
             echo(f"recording from {label}. Press Ctrl-C to stop.")
             while not stopping.is_set():
                 left = remaining()
-                if left is not None and left <= 0:
+                if (left is not None and left <= 0) or pipeline.state.capture_stopped:
                     break
                 stopping.wait(1.0)
     finally:
+        if pipeline.state.capture_stopped:
+            echo(
+                "\n[red]recording stopped by itself: the microphone or audio "
+                "device was lost.[/red] Everything before that is saved.\n"
+                "[dim]Check the device with:  notes check[/dim]"
+            )
         pending = pipeline.state.chunks_pending
         if later:
             # Nothing is being transcribed, so do not claim otherwise.
@@ -371,7 +390,7 @@ def _summarize_session(
     if not summarize.ollama_available():
         return fail(
             "Ollama is not running, so notes cannot be generated. "
-            f"Start it with 'ollama serve', then run:  notes catchup\n"
+            f"To start it, {summarize.start_ollama_hint()}, then run:  notes catchup\n"
             f"Your transcript is safe at {session.transcript_path}"
         )
 
@@ -461,7 +480,7 @@ def cmd_catchup(args: argparse.Namespace) -> int:
     if not summarize.ollama_available():
         return fail(
             "Ollama is not running, so notes cannot be written. "
-            "Start it with 'ollama serve', then run: notes catchup"
+            f"To start it, {summarize.start_ollama_hint()}, then run: notes catchup"
         )
 
     failed = 0
@@ -774,7 +793,14 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("menu", help="the simple menu (no commands to remember)")
-    subparsers.add_parser("check", help="check the microphone, devices and notes writer")
+    check = subparsers.add_parser("check", help="check the microphone, devices and notes writer")
+    check.add_argument(
+        "--listen", action="store_true",
+        help="also record a few seconds to prove the microphone really works",
+    )
+    subparsers.add_parser(
+        "setup-online", help="one-time guided setup for recording online classes"
+    )
     subparsers.add_parser("devices", help="list microphones and system-audio sources")
     update = subparsers.add_parser(
         "update", help="update NoteTaker without overwriting local changes"
@@ -876,6 +902,7 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = {
     "menu": cmd_menu,
     "check": cmd_check,
+    "setup-online": cmd_setup_online,
     "devices": cmd_devices,
     "update": cmd_update,
     "record": cmd_record,

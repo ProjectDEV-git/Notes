@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -289,6 +290,16 @@ def test_catchup_without_ollama_keeps_everything(db, monkeypatch):
 LAUNCHER = Path(__file__).resolve().parent.parent / "scripts" / "notes"
 
 
+def _fake_app(root: Path) -> str:
+    """An installed-looking checkout, so the launcher runs on any machine."""
+    venv_bin = root / "app" / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    python = venv_bin / "python"
+    python.write_text("#!/bin/sh\nexit 0\n")
+    python.chmod(0o755)
+    return str(root / "app")
+
+
 def _dispatch(verb: str, env: dict | None = None) -> str:
     """What CLI command does `notes <verb>` actually run?
 
@@ -298,16 +309,15 @@ def _dispatch(verb: str, env: dict | None = None) -> str:
     traced = LAUNCHER.read_text().replace(
         'exec "$PY" -m notetaker.cli', "echo CLI"
     )
-    script = LAUNCHER.parent / "_traced_notes"
-    script.write_text(traced)
-    try:
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "_traced_notes"
+        script.write_text(traced)
         result = subprocess.run(
             ["bash", str(script), verb],
             capture_output=True, text=True,
-            env={**os.environ, **(env or {})},
+            env={**os.environ, "NOTETAKER_APP_DIR": _fake_app(Path(tmp)),
+                 "NOTES_AUTO_UPDATE": "0", **(env or {})},
         )
-    finally:
-        script.unlink(missing_ok=True)
     return result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
 
 
@@ -494,3 +504,91 @@ def test_every_suggested_command_is_a_real_launcher_verb():
     for verb in sorted(suggested):
         assert re.search(rf"^\s+[a-z|]*\b{verb}\b[a-z|]*\)", launcher, re.M), \
             f"cli.py suggests 'notes {verb}' but the launcher has no such verb"
+
+
+def test_lost_audio_device_is_reported_and_stops_the_clock(monkeypatch):
+    """An unplugged mic must not leave '● REC' counting over silence."""
+    from notetaker import pipeline as P
+
+    pipe = P.RecordingPipeline.__new__(P.RecordingPipeline)
+    pipe.state = P.PipelineState()
+    pipe.transcribe = False
+    pipe.on_update = None
+    pipe._lock = __import__("threading").Lock()
+    pipe._stop = __import__("threading").Event()
+
+    class DeadRecorder:
+        is_running = False
+        elapsed = 99.0
+        chunks_dir = Path("/nonexistent")
+
+    pipe.recorder = DeadRecorder()
+    pipe._silence_checked = True
+    monkeypatch.setattr(P.time, "sleep", lambda _: pipe._stop.set())
+    pipe._tick_loop()
+
+    assert pipe.state.capture_stopped
+    assert "recording stopped" in pipe.state.error
+
+
+def test_live_backlog_is_mapped_window_by_window(monkeypatch):
+    """After a failed cycle, a long backlog must not go into one MAP call."""
+    from notetaker import pipeline as P
+    from notetaker.asr import Segment
+
+    calls = []
+
+    def fake_map(window, *a, **k):
+        calls.append(window)
+        return [f"point {len(calls)}"], []
+
+    monkeypatch.setattr(S, "map_window", fake_map)
+    pipe = P.RecordingPipeline.__new__(P.RecordingPipeline)
+    pipe.state = P.PipelineState(language="en")
+    pipe.state.segments = [Segment(i * 30.0, i * 30.0 + 29, f"s{i}", "en", i) for i in range(20)]
+    pipe.on_update = None
+    pipe.summary_model = "stub"
+    pipe.level = "school"
+    pipe.live_interval = 0
+    pipe._lock = __import__("threading").Lock()
+    pipe._stop = __import__("threading").Event()
+    monkeypatch.setattr(pipe._stop, "wait", lambda t: bool(calls))
+    pipe._live_notes_loop()
+
+    assert len(calls) > 1
+    assert pipe.state.live_consumed == 20
+
+
+def test_a_silent_first_chunk_warns_during_class(monkeypatch, tmp_path):
+    """A mic blocked by macOS/Windows privacy settings records pure zeros."""
+    from notetaker import audio, pipeline as P
+
+    chunks = tmp_path / "chunks"
+    chunks.mkdir()
+    for i in range(2):
+        (chunks / f"chunk_{i:05d}.wav").write_bytes(b"")
+    pipe = P.RecordingPipeline.__new__(P.RecordingPipeline)
+    pipe.state = P.PipelineState()
+    pipe._lock = __import__("threading").Lock()
+    pipe._silence_checked = False
+    pipe.source = audio.AudioSource("x", "Mic", config.SOURCE_MIC)
+    pipe.recorder = type("R", (), {"chunks_dir": chunks})()
+    monkeypatch.setattr(P, "rms_level", lambda path: 0.0)
+    opened = []
+    monkeypatch.setattr(audio, "open_settings", lambda page: opened.append(page) or True)
+
+    pipe._check_silence()
+
+    assert "silent" in pipe.state.silent_input
+    assert opened == ["microphone"], "the exact settings page should open for them"
+
+
+@pytest.mark.parametrize(
+    "verb", ["now", "class", "later", "catchup", "online", "all", "check", "update", "menu"]
+)
+def test_windows_launcher_matches_the_bash_one(verb):
+    """`notes class` must mean the same thing on Windows as on a Mac."""
+    from notetaker import shortcuts
+
+    bash = _dispatch(verb).removeprefix("CLI").split()
+    assert shortcuts.translate([verb]) == bash

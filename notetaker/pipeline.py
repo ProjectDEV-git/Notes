@@ -17,7 +17,12 @@ from typing import Callable
 
 from . import config, store, summarize
 from .asr import Segment, Transcriber, TranscriptWriter
+from . import audio
 from .audio import AudioSource, Recorder, rms_level
+
+# Below this RMS a chunk is digital silence, not a quiet room. A blocked mic on
+# macOS/Windows delivers exact zeros; even a silent classroom has hiss.
+SILENCE_RMS = 1e-4
 
 
 @dataclass
@@ -42,6 +47,12 @@ class PipelineState:
     live_key_points: list[str] = field(default_factory=list)
     live_admin_points: list[str] = field(default_factory=list)
     live_consumed: int = 0
+    # Set when ffmpeg exited by itself mid-class (microphone unplugged,
+    # headset disconnected). Nothing after that moment is being recorded.
+    capture_stopped: bool = False
+    # Set when the first chunk is pure digital silence: a privacy setting is
+    # blocking the mic, or online-class audio is not routed to the recorder.
+    silent_input: str | None = None
 
     @property
     def recent_text(self) -> list[str]:
@@ -106,6 +117,7 @@ class RecordingPipeline:
         # real time, so a fixed timeout truncates the end of a long class.
         self._chunk_cost: float = 0.0
         self._asr_thread: threading.Thread | None = None
+        self._silence_checked = False
 
     # -- lifecycle ------------------------------------------------------
     def start(self) -> None:
@@ -212,15 +224,51 @@ class RecordingPipeline:
                 self.state.error = f"transcription stopped: {exc}"
             self._notify()
 
+    def _check_silence(self) -> None:
+        """Warn within the first minute if the recording is pure silence.
+
+        Without this, a mic blocked by macOS or Windows privacy settings
+        records an entire class of nothing and the student finds out at home.
+        """
+        if self._silence_checked:
+            return
+        try:
+            chunks = sorted(self.recorder.chunks_dir.glob("chunk_*.wav"))
+        except Exception:
+            return
+        if len(chunks) < 2:
+            return  # the first chunk is only safe to read once the next exists
+        self._silence_checked = True
+        try:
+            level = rms_level(chunks[0])
+        except Exception:
+            return
+        if level >= SILENCE_RMS:
+            return
+        kind = getattr(self.source, "kind", config.SOURCE_MIC)
+        if kind == config.SOURCE_MIC:
+            audio.open_settings("microphone")
+        with self._lock:
+            self.state.silent_input = "the recording is silent: " + audio.silent_input_help(kind)
+
     def _tick_loop(self) -> None:
         """Keeps the elapsed clock moving and tracks the ASR backlog."""
         while not self._stop.is_set():
+            self._check_silence()
             try:
                 on_disk = len(list(self.recorder.chunks_dir.glob("chunk_*.wav")))
             except Exception:
                 on_disk = 0
+            capture_died = not self.recorder.is_running and not self._stop.is_set()
             with self._lock:
-                self.state.elapsed = self.recorder.elapsed
+                if capture_died and not self.state.capture_stopped:
+                    self.state.capture_stopped = True
+                    self.state.error = (
+                        "recording stopped: the microphone or audio device was lost. "
+                        "Everything up to now is saved."
+                    )
+                if not self.state.capture_stopped:
+                    self.state.elapsed = self.recorder.elapsed
                 # In audio-only mode nothing is meant to be transcribed yet, so
                 # untranscribed chunks are the plan, not a backlog.
                 # The newest chunk is still being written, so it is not backlog.
@@ -254,26 +302,30 @@ class RecordingPipeline:
             if not pending:
                 continue
 
-            window_text = " ".join(s.text for s in pending)
-            try:
-                window = summarize.Window(pending[0].start, pending[-1].end, window_text)
-                keys, admins = summarize.map_window(
-                    window, language, self.summary_model, level=self.level
-                )
-            except summarize.SummarizerError:
-                continue  # live notes are best-effort; the transcript is safe
+            # After a failed cycle the backlog spans several intervals. Mapping
+            # it in one call would squeeze many minutes into MAP_MAX_TOKENS and
+            # drop points, so map it a normal-sized window at a time.
+            for window in summarize.build_windows(pending, config.MAP_WINDOW_SECONDS):
+                if self._stop.is_set():
+                    break
+                try:
+                    keys, admins = summarize.map_window(
+                        window, language, self.summary_model, level=self.level
+                    )
+                except summarize.SummarizerError:
+                    break  # live notes are best-effort; the transcript is safe
 
-            consumed += len(pending)
-            with self._lock:
-                # Kept separately from the display list so the finish step can
-                # reuse the MAP work instead of paying for it a second time.
-                self.state.live_key_points.extend(keys)
-                self.state.live_admin_points.extend(admins)
-                self.state.live_consumed = consumed
-                self.state.live_points = summarize.dedupe_points(
-                    self.state.live_points + keys + admins
-                )
-            self._notify()
+                consumed += window.segment_count
+                with self._lock:
+                    # Kept separately from the display list so the finish step
+                    # can reuse the MAP work instead of paying for it twice.
+                    self.state.live_key_points.extend(keys)
+                    self.state.live_admin_points.extend(admins)
+                    self.state.live_consumed = consumed
+                    self.state.live_points = summarize.dedupe_points(
+                        self.state.live_points + keys + admins
+                    )
+                self._notify()
 
     def _notify(self) -> None:
         if self.on_update:

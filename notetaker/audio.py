@@ -12,8 +12,10 @@ Two source kinds matter:
             CoreAudio exposes no monitor of the output by default.
 
 Platform support:
-  Linux  - ffmpeg '-f pulse', devices enumerated with pactl
-  macOS  - ffmpeg '-f avfoundation', devices enumerated from ffmpeg itself
+  Linux   - ffmpeg '-f pulse', devices enumerated with pactl
+  macOS   - ffmpeg '-f avfoundation', devices enumerated from ffmpeg itself
+  Windows - ffmpeg '-f dshow', devices enumerated from ffmpeg itself. System
+            audio needs "Stereo Mix" turned on, or a virtual cable.
 
 See docs/BUILD_PLAN.md phase 2.
 """
@@ -36,6 +38,7 @@ from . import config
 
 IS_MACOS = sys.platform == "darwin"
 IS_LINUX = sys.platform.startswith("linux")
+IS_WINDOWS = sys.platform == "win32"
 
 # Device names that are loopback drivers: on macOS these are the only way to
 # capture system audio, since CoreAudio has no monitor source of its own.
@@ -49,6 +52,27 @@ _MACOS_LOOPBACK_HINTS = (
     "vb-cable",
     "existential audio",
 )
+
+
+# DirectShow inputs that carry what the speakers play rather than a mic.
+_WINDOWS_LOOPBACK_HINTS = (
+    "stereo mix",
+    "what u hear",
+    "wave out",
+    "loopback",
+    "cable output",
+    "vb-audio",
+    "voicemeeter",
+    "virtual-audio-capturer",
+)
+
+
+def _ffmpeg_hint() -> str:
+    if IS_MACOS:
+        return " (install it with: brew install ffmpeg)"
+    if IS_WINDOWS:
+        return " (install it with: winget install Gyan.FFmpeg, then open a new window)"
+    return ""
 
 
 class AudioError(RuntimeError):
@@ -224,11 +248,142 @@ def _list_sources_avfoundation() -> list[AudioSource]:
     return sources
 
 
+# ffmpeg 5+ prints:  [dshow @ 0x..] "Microphone (Realtek Audio)" (audio)
+# older builds put devices under a "DirectShow audio devices" header instead.
+_DSHOW_HEADER = re.compile(r"DirectShow (audio|video) devices")
+_DSHOW_DEVICE = re.compile(r'\]\s+"([^"]+)"\s*(?:\((audio|video|none)\))?')
+
+
+def _windows_device_kind(description: str) -> str:
+    lowered = description.lower()
+    if any(hint in lowered for hint in _WINDOWS_LOOPBACK_HINTS):
+        return config.SOURCE_SYSTEM
+    return config.SOURCE_MIC
+
+
+def _dshow_output() -> str:
+    """Raw ffmpeg DirectShow listing. ffmpeg exits 1 here by design."""
+    if shutil.which(config.FFMPEG_BIN) is None:
+        raise AudioError("ffmpeg not found on PATH" + _ffmpeg_hint())
+    try:
+        proc = subprocess.run(
+            [config.FFMPEG_BIN, "-hide_banner", "-list_devices", "true",
+             "-f", "dshow", "-i", "dummy"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=20,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AudioError("ffmpeg timed out listing audio devices") from exc
+    return proc.stderr
+
+
+def _list_sources_dshow() -> list[AudioSource]:
+    """Enumerate Windows capture devices via ffmpeg's DirectShow listing."""
+    sources: list[AudioSource] = []
+    section = None
+    for raw in _dshow_output().splitlines():
+        header = _DSHOW_HEADER.search(raw)
+        if header:
+            section = header.group(1)
+            continue
+        if "Alternative name" in raw:
+            continue
+        match = _DSHOW_DEVICE.search(raw)
+        if not match:
+            continue
+        description, kind = match.group(1), match.group(2) or section
+        if kind != "audio":
+            continue
+        sources.append(
+            AudioSource(
+                name=f"audio={description}",
+                description=description,
+                kind=_windows_device_kind(description),
+            )
+        )
+    # DirectShow has no notion of a default device. The first microphone is
+    # what Windows lists first, which is almost always the built-in one.
+    for index, src in enumerate(sources):
+        if src.kind == config.SOURCE_MIC:
+            sources[index] = AudioSource(src.name, src.description, src.kind, True)
+            break
+    return sources
+
+
 def list_sources() -> list[AudioSource]:
     """Enumerate capture sources for the current platform."""
     if IS_MACOS:
         return _list_sources_avfoundation()
+    if IS_WINDOWS:
+        return _list_sources_dshow()
     return _list_sources_pulse()
+
+
+def system_audio_help() -> str:
+    """What a beginner must do once so online classes can be recorded."""
+    if IS_MACOS:
+        return (
+            "macOS cannot record what the speakers play without a free helper "
+            "called BlackHole. Run:  notes setup-online"
+        )
+    if IS_WINDOWS:
+        return (
+            "Windows hides its system-audio recorder (\"Stereo Mix\") by default. "
+            "Run:  notes setup-online"
+        )
+    return "your machine exposes no .monitor source; check `notes devices`"
+
+
+def open_settings(target: str) -> bool:
+    """Open a system settings page for the user. Best effort, never raises.
+
+    A beginner told "go to System Settings > Privacy & Security > Microphone"
+    often gives up; opening the exact page removes the hunt.
+    """
+    pages = {
+        ("darwin", "microphone"):
+            ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"],
+        ("darwin", "audio-midi"): ["open", "-a", "Audio MIDI Setup"],
+        ("darwin", "sound"): ["open", "x-apple.systempreferences:com.apple.preference.sound"],
+        ("win32", "microphone"): ["cmd", "/c", "start", "", "ms-settings:privacy-microphone"],
+        ("win32", "recording-devices"): ["control", "mmsys.cpl,,1"],
+        ("win32", "sound"): ["cmd", "/c", "start", "", "ms-settings:sound"],
+    }
+    command = pages.get((sys.platform, target))
+    if not command:
+        return False
+    try:
+        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except OSError:
+        return False
+
+
+def silent_input_help(kind: str) -> str:
+    """Why a recording is pure silence, and the fix, for this platform."""
+    if kind == config.SOURCE_SYSTEM:
+        if IS_MACOS:
+            return (
+                "nothing is reaching BlackHole. Click the sound icon in the menu bar "
+                "and choose \"NoteTaker Output\" (or your Multi-Output Device)."
+            )
+        if IS_WINDOWS:
+            return (
+                "Stereo Mix hears nothing. Play the class through your normal "
+                "speakers or headphones, and check Stereo Mix is enabled."
+            )
+        return "nothing is playing through the current speakers."
+    if IS_MACOS:
+        return (
+            "macOS is blocking the microphone. In the window that opened, turn on "
+            "your terminal app, then quit the terminal (Cmd-Q) and start again."
+        )
+    if IS_WINDOWS:
+        return (
+            "Windows is blocking the microphone. In the window that opened, turn on "
+            "\"Let desktop apps access your microphone\", then start again."
+        )
+    return "the microphone may be muted. Check your sound settings."
 
 
 def resolve_source(selector: str | None) -> AudioSource:
@@ -245,6 +400,9 @@ def resolve_source(selector: str | None) -> AudioSource:
                 "(grant microphone permission to your terminal in "
                 "System Settings > Privacy & Security > Microphone)"
                 if IS_MACOS
+                else "(check Settings > Privacy & security > Microphone, and that "
+                "a microphone is plugged in)"
+                if IS_WINDOWS
                 else "(is PipeWire/PulseAudio running?)"
             )
         )
@@ -259,17 +417,11 @@ def resolve_source(selector: str | None) -> AudioSource:
     if sel in (config.SOURCE_MIC, config.SOURCE_SYSTEM):
         matches = [s for s in sources if s.kind == sel]
         if not matches:
-            if IS_MACOS and sel == config.SOURCE_SYSTEM:
-                raise AudioError(
-                    "no system-audio source on this Mac. macOS cannot capture playback "
-                    "without a loopback driver. Install one, e.g.:\n"
-                    "  brew install blackhole-2ch\n"
-                    "then send lecture audio to it with a Multi-Output Device "
-                    "(Audio MIDI Setup) so you can still hear it."
-                )
+            if sel == config.SOURCE_SYSTEM and (IS_MACOS or IS_WINDOWS):
+                raise AudioError("online classes are not set up yet. " + system_audio_help())
             raise AudioError(f"no '{sel}' source available on this machine")
 
-        if sel == config.SOURCE_SYSTEM and not IS_MACOS:
+        if sel == config.SOURCE_SYSTEM and IS_LINUX:
             # Follow the sink that is actually playing. Picking the wrong
             # card's monitor (e.g. built-in while audio goes to Bluetooth)
             # silently records silence for the whole lecture.
@@ -287,15 +439,15 @@ def resolve_source(selector: str | None) -> AudioSource:
     for src in sources:
         if src.name == sel:
             return src
-    # On macOS the raw name is an opaque index like ':1', so let users name the
-    # device they actually see, e.g. --source "BlackHole 2ch".
+    # On macOS the raw name is an opaque index like ':1' (and on Windows it is
+    # prefixed with "audio="), so let users name the device they actually see.
     for src in sources:
         if src.description.lower() == sel.lower():
             return src
     raise AudioError(
         f"unknown audio source: {selector!r}. "
         f"Use 'mic', 'system', or one of: "
-        f"{', '.join(s.description if IS_MACOS else s.name for s in sources)}"
+        f"{', '.join(s.name if IS_LINUX else s.description for s in sources)}"
     )
 
 
@@ -377,6 +529,10 @@ class Recorder:
                 "-ar", str(config.SAMPLE_RATE),
                 "-i", self.source.name,
             ]
+        if IS_WINDOWS:
+            # A small buffer keeps DirectShow from dropping audio when the
+            # laptop is busy transcribing.
+            return ["-f", "dshow", "-audio_buffer_size", "50", "-i", self.source.name]
         return ["-f", "pulse", "-i", self.source.name]
 
     def _build_command(self) -> list[str]:
@@ -400,8 +556,7 @@ class Recorder:
 
     def start(self) -> None:
         if shutil.which(config.FFMPEG_BIN) is None:
-            hint = " (install it with: brew install ffmpeg)" if IS_MACOS else ""
-            raise AudioError(f"ffmpeg not found on PATH{hint}")
+            raise AudioError("ffmpeg not found on PATH" + _ffmpeg_hint())
 
         # PulseAudio silently falls back to the default source when given an
         # unknown device name, so ffmpeg would "succeed" while recording the
@@ -419,23 +574,36 @@ class Recorder:
         self.chunks_dir.mkdir(parents=True, exist_ok=True)
         self._proc = subprocess.Popen(
             self._build_command(),
+            # Windows has no SIGINT for child processes; ffmpeg stops cleanly
+            # when it reads "q" on stdin instead.
+            stdin=subprocess.PIPE if IS_WINDOWS else subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         self._started_at = time.monotonic()
-        # Fail fast if the device is bad: ffmpeg exits almost immediately.
-        time.sleep(0.4)
+        # Fail fast if the device is bad: ffmpeg exits soon after starting,
+        # but how soon depends on the audio system (an unreachable PulseAudio
+        # server takes over a second to give up), so watch for a while.
+        deadline = time.monotonic() + 1.5
+        while self._proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
         if self._proc.poll() is not None:
             err = (self._proc.stderr.read() if self._proc.stderr else "") or ""
             hint = ""
-            if IS_MACOS:
-                # The usual cause on a Mac is a missing TCC grant: ffmpeg gets
-                # an empty device list or fails to open the input.
-                hint = (
-                    "\nIf this is the first recording, allow your terminal under "
-                    "System Settings > Privacy & Security > Microphone, then retry."
-                )
+            if (IS_MACOS or IS_WINDOWS) and self.source.kind == config.SOURCE_MIC:
+                # The usual cause is a privacy setting blocking the mic: open
+                # the exact page instead of describing where it lives.
+                opened = open_settings("microphone")
+                hint = "\n" + silent_input_help(config.SOURCE_MIC)
+                if not opened:
+                    hint += (
+                        "\nThe setting is under System Settings > Privacy & Security > "
+                        "Microphone." if IS_MACOS else
+                        "\nThe setting is under Settings > Privacy & security > Microphone."
+                    )
             raise AudioError(
                 f"ffmpeg failed to start on {self.source.description!r}: {err.strip()}{hint}"
             )
@@ -448,7 +616,15 @@ class Recorder:
             return
         # SIGINT lets ffmpeg finalize WAV headers. SIGKILL corrupts the file
         # (verified: produces a 0-byte unreadable WAV). Never kill first.
-        proc.send_signal(signal.SIGINT)
+        try:
+            if IS_WINDOWS:
+                assert proc.stdin is not None
+                proc.stdin.write("q")
+                proc.stdin.flush()
+            else:
+                proc.send_signal(signal.SIGINT)
+        except (OSError, ValueError, AssertionError):
+            pass  # already exiting; the wait below still finalizes it
         try:
             proc.wait(timeout=config.FFMPEG_STOP_TIMEOUT)
         except subprocess.TimeoutExpired:

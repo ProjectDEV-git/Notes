@@ -52,12 +52,20 @@ def update_checkout(app_dir: Path, python_path: Path) -> tuple[bool, str]:
     if status.stdout.strip():
         raise UpdateError("local changes are present; commit or stash them before updating")
 
+    # Compare commits rather than reading git's messages: those are translated,
+    # so on a Thai system "Already up to date" never appears and every launch
+    # would reinstall dependencies.
+    before = _run(["git", "rev-parse", "HEAD"], app_dir, timeout=NETWORK_TIMEOUT)
     pull = _run(["git", "pull", "--ff-only"], app_dir, timeout=NETWORK_TIMEOUT)
     if pull.returncode != 0:
         detail = pull.stderr.strip() or pull.stdout.strip()
         raise UpdateError(detail or "Git could not fast-forward this checkout")
 
-    changed = "Already up to date" not in pull.stdout
+    after = _run(["git", "rev-parse", "HEAD"], app_dir, timeout=NETWORK_TIMEOUT)
+    if before.returncode == 0 and after.returncode == 0:
+        changed = before.stdout.strip() != after.stdout.strip()
+    else:
+        changed = "Already up to date" not in pull.stdout
     if not changed:
         # Nothing was downloaded, so the installed dependencies still match.
         # Skipping pip here is what keeps the common launch fast.

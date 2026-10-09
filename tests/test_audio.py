@@ -304,7 +304,7 @@ def test_macos_system_without_loopback_explains_the_fix(monkeypatch):
     monkeypatch.setattr(audio, "IS_MACOS", True)
     monkeypatch.setattr(audio, "_avfoundation_output", lambda: listing)
     monkeypatch.setattr(audio, "list_sources", audio._list_sources_avfoundation)
-    with pytest.raises(audio.AudioError, match="blackhole"):
+    with pytest.raises(audio.AudioError, match="BlackHole.*notes setup-online"):
         audio.resolve_source(config.SOURCE_SYSTEM)
 
 
@@ -380,3 +380,75 @@ def test_system_source_falls_back_when_active_sink_is_unknown(monkeypatch):
 
     # No active monitor known: fall back to the default-flagged one.
     assert audio.resolve_source(config.SOURCE_SYSTEM).name == "builtin.monitor"
+
+
+# ------------------------------------------------------------------ Windows
+_DSHOW_NEW = """\
+[dshow @ 000001] "Integrated Webcam" (video)
+[dshow @ 000001]   Alternative name "@device_pnp_xyz"
+[dshow @ 000001] "Microphone Array (Realtek(R) Audio)" (audio)
+[dshow @ 000001]   Alternative name "@device_cm_{abc}"
+[dshow @ 000001] "Stereo Mix (Realtek(R) Audio)" (audio)
+"""
+
+_DSHOW_OLD = """\
+[dshow @ 000001] DirectShow video devices (some may be both video and audio devices)
+[dshow @ 000001]  "Integrated Webcam"
+[dshow @ 000001] DirectShow audio devices
+[dshow @ 000001]  "Microphone (USB Audio)"
+[dshow @ 000001]     Alternative name "@device_cm_{def}"
+[dshow @ 000001]  "CABLE Output (VB-Audio Virtual Cable)"
+"""
+
+
+@pytest.mark.parametrize("listing", [_DSHOW_NEW, _DSHOW_OLD])
+def test_windows_devices_are_listed_and_classified(monkeypatch, listing):
+    monkeypatch.setattr(audio, "_dshow_output", lambda: listing)
+    sources = audio._list_sources_dshow()
+
+    assert len(sources) == 2, "video devices and alternative names are not inputs"
+    mic, system = sources
+    assert mic.kind == config.SOURCE_MIC and mic.is_default
+    assert mic.name.startswith("audio=")
+    assert system.kind == config.SOURCE_SYSTEM
+
+
+def test_windows_records_with_dshow(monkeypatch, tmp_path):
+    monkeypatch.setattr(audio, "IS_MACOS", False)
+    monkeypatch.setattr(audio, "IS_WINDOWS", True)
+    src = audio.AudioSource("audio=Microphone (USB Audio)", "Microphone (USB Audio)", config.SOURCE_MIC)
+    command = audio.Recorder(src, tmp_path)._build_command()
+    assert command[command.index("-f") + 1] == "dshow"
+    assert "audio=Microphone (USB Audio)" in command
+
+
+def test_windows_stops_ffmpeg_with_q_not_a_signal(monkeypatch, tmp_path):
+    """Windows cannot SIGINT a child; 'q' on stdin lets ffmpeg finish the WAV."""
+    monkeypatch.setattr(audio, "IS_WINDOWS", True)
+    written = []
+
+    class FakeStdin:
+        def write(self, text): written.append(text)
+        def flush(self): pass
+
+    class FakeProc:
+        stdin = FakeStdin()
+        def poll(self): return None
+        def send_signal(self, sig): raise AssertionError("signals do not work on Windows")
+        def wait(self, timeout=None): return 0
+
+    src = audio.AudioSource("audio=Mic", "Mic", config.SOURCE_MIC)
+    recorder = audio.Recorder(src, tmp_path)
+    recorder._proc = FakeProc()
+    recorder.stop()
+    assert written == ["q"]
+
+
+def test_windows_system_audio_points_at_guided_setup(monkeypatch):
+    monkeypatch.setattr(audio, "IS_MACOS", False)
+    monkeypatch.setattr(audio, "IS_WINDOWS", True)
+    monkeypatch.setattr(audio, "list_sources", lambda: [
+        audio.AudioSource("audio=Mic", "Mic", config.SOURCE_MIC, True)
+    ])
+    with pytest.raises(audio.AudioError, match="Stereo Mix.*notes setup-online"):
+        audio.resolve_source(config.SOURCE_SYSTEM)
