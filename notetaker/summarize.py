@@ -315,6 +315,17 @@ def build_windows(
 # --------------------------------------------------------------------------
 # Ollama client
 # --------------------------------------------------------------------------
+def start_ollama_hint() -> str:
+    """How to start Ollama, in the words this user's OS needs."""
+    import sys
+
+    if sys.platform == "darwin":
+        return "open the Ollama app (Applications > Ollama; a llama icon appears in the menu bar)"
+    if sys.platform == "win32":
+        return "open Ollama from the Start menu (a llama icon appears by the clock)"
+    return "run 'ollama serve'"
+
+
 def ollama_available(url: str = config.OLLAMA_URL, timeout: float = 3.0) -> bool:
     try:
         with urllib.request.urlopen(f"{url}/api/tags", timeout=timeout):
@@ -372,7 +383,7 @@ def chat(
     except urllib.error.URLError as exc:
         raise SummarizerError(
             f"cannot reach Ollama at {url} ({exc}). "
-            "Start it with 'ollama serve'. Your transcript has been saved."
+            f"To start it, {start_ollama_hint()}. Your transcript has been saved."
         ) from exc
     except TimeoutError as exc:
         raise SummarizerError(

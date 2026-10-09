@@ -182,9 +182,28 @@ lecture. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
 
 ## Install
 
-Runs on **Linux** (PipeWire/PulseAudio) and **macOS** (AVFoundation).
+Runs on **Windows 10/11**, **macOS** and **Linux**.
 
-One command sets up everything, including ffmpeg, Ollama and the summary model:
+**Not comfortable with the terminal?** Download NoteTaker
+([Code > Download ZIP](https://github.com/ProjectDEV-git/Notes/archive/refs/heads/main.zip)),
+unzip it, and double-click the installer for your computer:
+
+| Computer | Double-click | If it is blocked |
+|---|---|---|
+| Mac | `Install NoteTaker.command` | Right-click it, choose **Open**, then **Open** again (only the first time) |
+| Windows | `Install NoteTaker (Windows).cmd` | Click **More info**, then **Run anyway** |
+
+It explains each helper app it needs in plain words, asks once, installs them
+all, and puts a **NoteTaker** icon on your Desktop. After that you never need
+the terminal: double-click the icon and pick a number.
+
+On Windows you can also paste one line into PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ProjectDEV-git/Notes/main/install.ps1 | iex
+```
+
+On a Mac or Linux, one command sets up everything, including ffmpeg, Ollama and the summary model:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ProjectDEV-git/Notes/main/install.sh | bash
@@ -235,29 +254,57 @@ The Whisper model downloads itself on first run (~500 MB).
 
 ### On a Mac
 
-Run the same `./install.sh`. It installs Homebrew for you if the Mac does not
-have it, and finds an existing one whether it lives in `/opt/homebrew` (Apple
-Silicon) or `/usr/local` (Intel).
+NoteTaker needs a few free helper apps. You do not need to know what they
+are: the installer lists them in plain words, asks **once**, and installs all
+of them.
 
-Two Mac-only things are worth knowing:
+| Helper | What it does |
+|---|---|
+| Homebrew | installs the free tools below |
+| Python | runs NoteTaker |
+| FFmpeg | records the sound |
+| Ollama | writes your notes, offline (a llama icon in the menu bar) |
 
-**Microphone permission.** The first recording asks for it. You have to say
-yes, or every class records silence. If you have already said no, macOS will
-not ask again: turn it on under
-*System Settings > Privacy & Security > Microphone* and tick your terminal.
+What to expect, so nothing is a surprise:
 
-**Online classes need a loopback driver.** Recording a class you are sitting
-in works straight away. Only *online* classes need this, because CoreAudio
-cannot capture what the speakers are playing. The installer offers it;
-otherwise:
+- A window may ask to install **command line developer tools**. Click
+  **Install** and wait; Homebrew needs them.
+- When asked for a **password**, type your Mac login password. Nothing appears
+  while you type; that is normal.
+- The installer records a few seconds at the end, so macOS asks for the
+  **Microphone** now rather than during your first class. Click **Allow**.
+
+If you clicked *Don't Allow* earlier, NoteTaker notices the recording is
+silent within a minute and **opens the right settings page for you**. Turn on
+your terminal there, quit it with Cmd-Q, and open it again.
+
+**Online classes** (Zoom, Teams, YouTube) need one extra free helper,
+BlackHole, because macOS cannot record what the speakers play. Choose
+**2. Record an online class** in the menu, or run:
 
 ```bash
-brew install --cask blackhole-2ch
+notes setup-online
 ```
 
-Then in **Audio MIDI Setup** create a Multi-Output Device combining BlackHole
-with your speakers and select it as the output, so you still hear the class
-while it records.
+It installs BlackHole, opens Audio MIDI Setup, and walks you through it one
+click at a time. Then it records a short test while you play any video, so
+you know it works before the class.
+
+### On Windows
+
+The installer uses **winget**, Microsoft's own app installer, for Python,
+FFmpeg, Git and Ollama. If winget is missing it opens the Microsoft Store on
+*App Installer*: click **Get**, then run the installer again.
+
+- If the microphone is blocked, NoteTaker opens
+  *Settings > Privacy & security > Microphone* for you. Turn on **Let desktop
+  apps access your microphone**.
+- **Online classes** use Windows' hidden *Stereo Mix* recorder.
+  `notes setup-online` opens the Sound window and shows the three clicks
+  needed to switch it on. If your laptop has no Stereo Mix, it points you to
+  the free VB-CABLE instead.
+- Recordings are kept in `%LOCALAPPDATA%\NoteTaker`, which OneDrive does not
+  upload.
 
 ---
 
@@ -437,6 +484,7 @@ transcription.
 ## Development
 
 ```bash
+.venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest tests/ -q      # full suite
 ```
 

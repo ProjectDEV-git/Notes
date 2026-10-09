@@ -72,9 +72,11 @@ class Check:
     fix: str = ""
 
 
-def _pkg_hint(linux: str, mac: str) -> str:
-    from .audio import IS_MACOS
+def _pkg_hint(linux: str, mac: str, windows: str = "") -> str:
+    from .audio import IS_MACOS, IS_WINDOWS
 
+    if IS_WINDOWS:
+        return windows or linux
     return mac if IS_MACOS else linux
 
 
@@ -95,7 +97,8 @@ def run_checks() -> list[Check]:
             "ffmpeg (records the audio)",
             have_ffmpeg,
             "found" if have_ffmpeg else "not installed",
-            _pkg_hint("sudo apt install ffmpeg", "brew install ffmpeg"),
+            _pkg_hint("sudo apt install ffmpeg", "brew install ffmpeg",
+                      "winget install Gyan.FFmpeg  (then open a new window)"),
         )
     )
 
@@ -113,7 +116,8 @@ def run_checks() -> list[Check]:
                 "audio devices",
                 False,
                 str(exc).splitlines()[0],
-                _pkg_hint("sudo apt install pulseaudio-utils", "brew install ffmpeg"),
+                _pkg_hint("sudo apt install pulseaudio-utils", "brew install ffmpeg",
+                          "winget install Gyan.FFmpeg"),
             )
         )
 
@@ -129,11 +133,7 @@ def run_checks() -> list[Check]:
             "online classes (system audio)",
             bool(systems),
             systems[0].description if systems else "not available",
-            "" if systems else _pkg_hint(
-                "your machine exposes no .monitor source; check `notes devices`",
-                "brew install blackhole-2ch, then make a Multi-Output Device "
-                "in Audio MIDI Setup",
-            ),
+            "" if systems else audio.system_audio_help(),
         )
     )
 
@@ -143,7 +143,7 @@ def run_checks() -> list[Check]:
             "Ollama (writes the notes)",
             running,
             "running" if running else "not running",
-            "" if running else "start it with: ollama serve",
+            "" if running else summarize.start_ollama_hint(),
         )
     )
 
@@ -351,7 +351,27 @@ def _cli(*argv: str) -> int:
     return code
 
 
+def _online_ready() -> bool:
+    """Offer the guided setup the first time an online class is recorded."""
+    from . import audio
+
+    try:
+        if any(s.kind == config.SOURCE_SYSTEM for s in audio.list_sources()):
+            return True
+    except audio.AudioError:
+        return True  # let the recording report the real problem
+    out("\n[yellow]Online classes are not set up on this computer yet.[/yellow]")
+    if not confirm("Set them up now? It takes about two minutes", default=True):
+        return False
+    from .setup_help import setup_online
+
+    return setup_online(out, ask, lambda q: confirm(q, default=True))
+
+
 def _record(source: str) -> int:
+    if source == config.SOURCE_SYSTEM and not _online_ready():
+        out("[dim]Run it any time with:  notes setup-online[/dim]")
+        return 1
     title = pick_subject()
     minutes = pick_class_length()
     argv = ["record", "--source", source, "--live-notes"]
@@ -414,6 +434,10 @@ def _save_to_file() -> int:
 
 def _check() -> int:
     ok = print_checks(run_checks())
+    if confirm("\nTest the microphone by recording a few seconds?", default=True):
+        from .setup_help import listen_test
+
+        ok = listen_test(out, ask) and ok
     if ok:
         out("\n[green]Everything is ready. You can record a class.[/green]")
     out("\n[dim]Same thing, typed:  notes check[/dim]")

@@ -10,6 +10,7 @@
 #   notes last       show the notes from the most recent lecture
 #   notes all        list every lecture
 #   notes check      confirm the microphone and notes writer work
+#   notes setup-online  guided one-time setup for recording online classes
 #   notes update     update NoteTaker safely from its Git repository
 #   notes <anything else>  passed straight through to the full CLI
 #
@@ -105,7 +106,8 @@ case "${1-}" in
         run list
         ;;
     check|test|doctor|setup)
-        run check
+        shift
+        run check --listen "$@"
         ;;
     update|upgrade)
         shift
@@ -122,6 +124,7 @@ notes later      record the sound only; write the notes after school
 notes catchup    write notes for every class that does not have them yet
 notes now        record until you press Ctrl-C (a long lecture)
 notes online     record an online class (Zoom/Teams/YouTube)
+notes setup-online  one-time setup so online classes can be recorded
 notes last       show the notes from your last class
 notes all        list every class
 notes check      confirm the microphone and notes writer work

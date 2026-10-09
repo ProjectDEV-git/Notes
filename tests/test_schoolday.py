@@ -523,6 +523,7 @@ def test_lost_audio_device_is_reported_and_stops_the_clock(monkeypatch):
         chunks_dir = Path("/nonexistent")
 
     pipe.recorder = DeadRecorder()
+    pipe._silence_checked = True
     monkeypatch.setattr(P.time, "sleep", lambda _: pipe._stop.set())
     pipe._tick_loop()
 
@@ -556,3 +557,38 @@ def test_live_backlog_is_mapped_window_by_window(monkeypatch):
 
     assert len(calls) > 1
     assert pipe.state.live_consumed == 20
+
+
+def test_a_silent_first_chunk_warns_during_class(monkeypatch, tmp_path):
+    """A mic blocked by macOS/Windows privacy settings records pure zeros."""
+    from notetaker import audio, pipeline as P
+
+    chunks = tmp_path / "chunks"
+    chunks.mkdir()
+    for i in range(2):
+        (chunks / f"chunk_{i:05d}.wav").write_bytes(b"")
+    pipe = P.RecordingPipeline.__new__(P.RecordingPipeline)
+    pipe.state = P.PipelineState()
+    pipe._lock = __import__("threading").Lock()
+    pipe._silence_checked = False
+    pipe.source = audio.AudioSource("x", "Mic", config.SOURCE_MIC)
+    pipe.recorder = type("R", (), {"chunks_dir": chunks})()
+    monkeypatch.setattr(P, "rms_level", lambda path: 0.0)
+    opened = []
+    monkeypatch.setattr(audio, "open_settings", lambda page: opened.append(page) or True)
+
+    pipe._check_silence()
+
+    assert "silent" in pipe.state.silent_input
+    assert opened == ["microphone"], "the exact settings page should open for them"
+
+
+@pytest.mark.parametrize(
+    "verb", ["now", "class", "later", "catchup", "online", "all", "check", "update", "menu"]
+)
+def test_windows_launcher_matches_the_bash_one(verb):
+    """`notes class` must mean the same thing on Windows as on a Mac."""
+    from notetaker import shortcuts
+
+    bash = _dispatch(verb).removeprefix("CLI").split()
+    assert shortcuts.translate([verb]) == bash

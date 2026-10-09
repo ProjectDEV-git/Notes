@@ -7,13 +7,21 @@ See docs/BUILD_PLAN.md for the reasoning behind these choices.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 # --------------------------------------------------------------------------
 # Paths (XDG-aware). Recordings live OUTSIDE the repo and are never committed.
 # --------------------------------------------------------------------------
 _xdg_data = os.environ.get("XDG_DATA_HOME")
-DATA_DIR = Path(_xdg_data).expanduser() / "notetaker" if _xdg_data else Path.home() / ".local" / "share" / "notetaker"
+if _xdg_data:
+    DATA_DIR = Path(_xdg_data).expanduser() / "notetaker"
+elif sys.platform == "win32":
+    # %LOCALAPPDATA% stays on this PC: OneDrive does not sync it, so an hour
+    # of audio is not uploaded behind the student's back.
+    DATA_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "NoteTaker"
+else:
+    DATA_DIR = Path.home() / ".local" / "share" / "notetaker"
 SESSIONS_DIR = DATA_DIR / "sessions"
 DB_PATH = DATA_DIR / "notetaker.db"
 

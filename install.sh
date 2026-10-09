@@ -67,11 +67,29 @@ ok()   { printf '\033[32m✓\033[0m %s\n' "$*"; }
 
 # Ask before changing the machine. A non-interactive shell (piped installer,
 # CI) must never block waiting for an answer, so it declines instead.
+#
+# `curl ... | bash` makes stdin the script itself, so questions are read from
+# the terminal directly. Without that, the one-line install quietly declined
+# everything and a beginner ended up with nothing installed.
+TTY=""
+if [[ -t 0 ]]; then
+    TTY=/dev/stdin
+elif [[ -z "${NOTETAKER_NO_TTY:-}" ]] && { : </dev/tty; } 2>/dev/null; then
+    TTY=/dev/tty
+fi
+
+ask_user() {
+    [[ -n "$TTY" ]] || return 1
+    local reply
+    read -r -p "$1 [Y/n] " reply <"$TTY" || return 1
+    [[ -z "$reply" || "$reply" =~ ^[Yy] ]]
+}
+
 confirm() {
     (( ASSUME_YES )) && return 0
-    [[ -t 0 ]] || return 1
+    [[ -n "$TTY" ]] || return 1
     local reply
-    read -r -p "$1 [Y/n] " reply || return 1
+    read -r -p "$1 [Y/n] " reply <"$TTY" || return 1
     [[ -z "$reply" || "$reply" =~ ^[Yy] ]]
 }
 
@@ -146,6 +164,39 @@ install_homebrew() {
     ok "Homebrew installed"
     return 0
 }
+
+# --------------------------------------------------------------------------
+# macOS: one plain-English question instead of a string of tool names.
+# A student does not know what ffmpeg or Homebrew is, and should not have to.
+# --------------------------------------------------------------------------
+python_ok() {
+    # /usr/bin/python3 on a Mac without developer tools is a stub that pops up
+    # an install dialog, so "it exists" is not enough: it has to run.
+    "$1" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1
+}
+
+PYTHON="python3"
+if (( IS_MAC )); then
+    MAC_NEEDS=()
+    [[ -z "$PKG" ]] && MAC_NEEDS+=("Homebrew   installs the free tools below (asks for your Mac password)")
+    python_ok python3 || MAC_NEEDS+=("Python     runs NoteTaker")
+    command -v ffmpeg >/dev/null || MAC_NEEDS+=("FFmpeg     records the sound")
+    command -v ollama >/dev/null || MAC_NEEDS+=("Ollama     the app that writes your notes, offline")
+    if (( ${#MAC_NEEDS[@]} )) && (( ! NO_INSTALL )); then
+        step "NoteTaker needs a few free helper apps"
+        for item in "${MAC_NEEDS[@]}"; do say "  • $item"; done
+        say "  • the notes model, a one-time download of about 2 GB"
+        say
+        say "This takes 10-20 minutes. Keep the Mac plugged in and online."
+        say "If a window asks to install \"command line developer tools\", click Install"
+        say "and wait for it to finish; Homebrew needs them."
+        say "When asked for a password, type your Mac login password. Nothing shows"
+        say "while you type; that is normal. Press Return when done."
+        if (( ! ASSUME_YES )) && ask_user "Install all of these now?"; then
+            ASSUME_YES=1
+        fi
+    fi
+fi
 
 if (( IS_MAC )) && [[ -z "$PKG" ]]; then
     step "Homebrew (needed to install everything else)"
@@ -271,15 +322,22 @@ fi
 # 2. Python environment
 # --------------------------------------------------------------------------
 step "2/5  Python environment"
+if [[ ! -x "$APP_DIR/.venv/bin/python" ]] && ! python_ok "$PYTHON"; then
+    if [[ "$PKG" == "brew" ]] && confirm_install "Install Python? (runs NoteTaker)"; then
+        say "  \$ brew install python@3.12"
+        brew install python@3.12 && PYTHON="$(brew --prefix)/bin/python3.12"
+    fi
+    python_ok "$PYTHON" || warn "a working Python 3.9 or newer was not found"
+fi
 if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
     # --system-site-packages so a preinstalled faster-whisper is reused.
-    if ! python3 -m venv "$APP_DIR/.venv" --system-site-packages 2>/dev/null; then
+    if ! "$PYTHON" -m venv "$APP_DIR/.venv" --system-site-packages 2>/dev/null; then
         # Debian and Ubuntu ship python3 without venv, which is the single
         # most common first-run failure on those systems.
         warn "python3 venv is unavailable."
         if [[ "$PKG" == "apt-get" ]] && confirm_install "Install python3-venv?"; then
             install_pkg venv
-            python3 -m venv "$APP_DIR/.venv" --system-site-packages
+            "$PYTHON" -m venv "$APP_DIR/.venv" --system-site-packages
         else
             warn "install it with: $(manual_hint venv)"
             exit 1
@@ -334,12 +392,18 @@ ollama_up() { curl -fsS --max-time 3 "${OLLAMA_URL:-http://localhost:11434}/api/
 
 SERVER_PID=""
 if command -v ollama >/dev/null && ! ollama_up; then
-    say "  starting the Ollama server..."
-    # Started detached so this script can talk to it; on Linux the installer
-    # normally leaves a systemd service running already.
-    ollama serve >/dev/null 2>&1 &
-    SERVER_PID=$!
-    for _ in $(seq 1 20); do
+    say "  starting Ollama..."
+    if (( IS_MAC )) && open -a Ollama >/dev/null 2>&1; then
+        # The menu-bar app keeps itself running and starts at login, so the
+        # student never has to think about it again.
+        :
+    else
+        # Started detached so this script can talk to it; on Linux the
+        # installer normally leaves a systemd service running already.
+        ollama serve >/dev/null 2>&1 &
+        SERVER_PID=$!
+    fi
+    for _ in $(seq 1 40); do
         ollama_up && break
         sleep 0.5
     done
@@ -422,40 +486,41 @@ if (( IS_MAC )); then
     say
     say "Only ONLINE classes need one, because macOS cannot record what the"
     say "speakers are playing on its own. Skip this if you record in person."
-    if command -v ffmpeg >/dev/null &&
-       ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 |
-         grep -qiE "blackhole|soundflower|loopback"; then
-        ok "a loopback device is present, online lectures will work"
-    else
-        # macOS exposes no monitor of the output, so without this `notes
-        # online` records silence.
-        if [[ "$PKG" == "brew" ]] && confirm_install "Install BlackHole (free, open source)?"; then
-            say "  \$ brew install --cask blackhole-2ch"
-            brew install --cask blackhole-2ch && ok "BlackHole installed"
-            say
-            say "One manual step remains, because macOS cannot script it:"
-            say "  1. Open Audio MIDI Setup"
-            say "  2. Create a Multi-Output Device with BlackHole 2ch + your speakers"
-            say "  3. Select it as your sound output during online lectures"
-        else
-            say "  For online classes later:  brew install --cask blackhole-2ch"
-        fi
+    say "When you need it, NoteTaker walks you through it step by step:"
+    say "  notes setup-online"
+    say "(it installs BlackHole, a free helper, and opens the right windows for you)."
+    if ask_user "Do you record online classes? Set them up now?"; then
+        "$APP_DIR/.venv/bin/python" -m notetaker.cli setup-online <"$TTY" || true
     fi
     say
     step "Microphone permission"
-    say "The first recording asks for Microphone access for your terminal app."
-    say "You must say yes, or every class records perfect silence."
+    say "macOS asks once whether NoteTaker may use the Microphone. Click Allow,"
+    say "or every class records perfect silence. The check below asks now, so"
+    say "it is out of the way before your first class."
     say
-    say "If you already said no once, macOS will not ask again. Turn it on at:"
+    say "If you clicked Don't Allow before, NoteTaker opens the exact page for you:"
     say "  System Settings > Privacy & Security > Microphone"
-    say "and enable your terminal (Terminal, iTerm, or whichever you use)."
+    say "Turn on your terminal (Terminal or iTerm), then quit it with Cmd-Q and reopen."
+
+    # A double-clickable icon, so the next time needs no terminal knowledge.
+    if confirm "Put a NoteTaker icon on your Desktop?"; then
+        desktop="$HOME/Desktop/NoteTaker.command"
+        printf '#!/bin/bash\n"%s" menu\n' "$BIN_DIR/notes" > "$desktop"
+        chmod +x "$desktop"
+        ok "double-click NoteTaker on your Desktop to start"
+    fi
 fi
 
 # --------------------------------------------------------------------------
 # Verify
 # --------------------------------------------------------------------------
 step "Checking the installation"
-"$APP_DIR/.venv/bin/python" -m notetaker.cli check || true
+if (( IS_MAC )) && [[ -n "$TTY" ]]; then
+    # Recording a few seconds is what makes macOS ask for the microphone.
+    "$APP_DIR/.venv/bin/python" -m notetaker.cli check --listen <"$TTY" || true
+else
+    "$APP_DIR/.venv/bin/python" -m notetaker.cli check || true
+fi
 
 say
 say "Done. Type one word to begin:"
