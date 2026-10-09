@@ -64,7 +64,9 @@ ASR_MODEL = "small"
 ASR_MODEL_HQ = "large-v3-turbo"  # optional post-lecture high-accuracy re-run
 ASR_DEVICE = "cpu"
 COMPUTE_TYPE = "int8"  # fast CPU path for ctranslate2
-CPU_THREADS = 8  # of 12 available; leave headroom for capture + UI
+# Leave two cores for capture and the display, so a 4-core school laptop does
+# not starve ffmpeg. Override with NOTETAKER_CPU_THREADS.
+CPU_THREADS = int(os.environ.get("NOTETAKER_CPU_THREADS") or max(1, (os.cpu_count() or 4) - 2))
 
 LANGUAGE = None  # None = autodetect. Override with --lang.
 

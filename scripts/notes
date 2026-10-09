@@ -20,7 +20,9 @@
 
 set -euo pipefail
 
-APP_DIR="/home/gamingrf/Documents/Projects/NoteTaker"
+# install.sh pins this to the checkout it installed from. Run straight from a
+# checkout, it finds its own folder; NOTETAKER_APP_DIR overrides both.
+APP_DIR="${NOTETAKER_APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PY="$APP_DIR/.venv/bin/python"
 
 if [[ ! -x "$PY" ]]; then

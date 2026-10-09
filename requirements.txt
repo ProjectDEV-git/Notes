@@ -3,4 +3,3 @@
 faster-whisper==1.2.1
 ctranslate2==4.8.0
 rich>=13.0
-pytest>=8.0

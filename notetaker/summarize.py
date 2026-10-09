@@ -81,6 +81,7 @@ class Window:
     start: float
     end: float
     text: str
+    segment_count: int = 0
 
     @property
     def timestamp(self) -> str:
@@ -298,14 +299,16 @@ def build_windows(
     for seg in segments:
         if current and seg.end - window_start > window_seconds:
             windows.append(
-                Window(window_start, current[-1].end, " ".join(s.text for s in current))
+                Window(window_start, current[-1].end, " ".join(s.text for s in current), len(current))
             )
             current = []
             window_start = seg.start
         current.append(seg)
 
     if current:
-        windows.append(Window(window_start, current[-1].end, " ".join(s.text for s in current)))
+        windows.append(
+            Window(window_start, current[-1].end, " ".join(s.text for s in current), len(current))
+        )
     return windows
 
 

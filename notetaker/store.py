@@ -30,7 +30,11 @@ from . import config
 from .artifacts import write_text_atomic
 from .asr import Segment, read_transcript
 
-_SCHEMA = """
+# Each entry upgrades the database by one version; PRAGMA user_version records
+# how many have run. Append new steps, never edit old ones, so every existing
+# library of classes upgrades in place.
+_MIGRATIONS: list[str] = [
+    """
 CREATE TABLE IF NOT EXISTS sessions (
     id           TEXT PRIMARY KEY,
     title        TEXT NOT NULL,
@@ -42,7 +46,21 @@ CREATE TABLE IF NOT EXISTS sessions (
     duration     REAL DEFAULT 0,
     has_notes    INTEGER DEFAULT 0
 );
-"""
+""",
+]
+SCHEMA_VERSION = len(_MIGRATIONS)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version > SCHEMA_VERSION:
+        raise RuntimeError(
+            "this class library was written by a newer NoteTaker; run 'notes update'"
+        )
+    for step in range(version, SCHEMA_VERSION):
+        with conn:
+            conn.executescript(_MIGRATIONS[step])
+            conn.execute(f"PRAGMA user_version = {step + 1}")
 
 
 def sessions_dir(db_path: Path | None = None) -> Path:
@@ -133,11 +151,13 @@ def connect(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
     """
     path = Path(db_path) if db_path else config.DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=10.0)
     conn.row_factory = sqlite3.Row
     try:
-        conn.executescript(_SCHEMA)
-        conn.commit()
+        # WAL lets a catch-up run read while a recording writes, without
+        # "database is locked" errors.
+        conn.execute("PRAGMA journal_mode=WAL")
+        _migrate(conn)
         yield conn
     finally:
         conn.close()
@@ -232,9 +252,19 @@ def resolve_session(selector: str, db_path: Path | None = None) -> Session:
     if exact:
         return exact
 
+    # SQLite's LIKE only folds ASCII case, so fold here too for Thai titles;
+    # the query narrows on the raw text and Python does the final check.
     needle = selector.lower()
+    pattern = "%" + selector.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    base = sessions_dir(db_path)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE id LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' "
+            "ORDER BY started_at DESC",
+            (pattern, pattern),
+        ).fetchall()
     matches = [
-        s for s in list_sessions(db_path=db_path)
+        s for s in (_row_to_session(r, base) for r in rows)
         if needle in s.id.lower() or needle in s.title.lower()
     ]
     if not matches:

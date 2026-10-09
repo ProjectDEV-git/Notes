@@ -273,7 +273,7 @@ def cmd_record(args: argparse.Namespace) -> int:
             with Live(console=console, refresh_per_second=4, transient=False) as live:
                 while not stopping.is_set():
                     left = remaining()
-                    if left is not None and left <= 0:
+                    if (left is not None and left <= 0) or pipeline.state.capture_stopped:
                         break
                     live.update(_render_live(pipeline.state, label, args.live_notes, left))
                     stopping.wait(0.25)
@@ -281,10 +281,16 @@ def cmd_record(args: argparse.Namespace) -> int:
             echo(f"recording from {label}. Press Ctrl-C to stop.")
             while not stopping.is_set():
                 left = remaining()
-                if left is not None and left <= 0:
+                if (left is not None and left <= 0) or pipeline.state.capture_stopped:
                     break
                 stopping.wait(1.0)
     finally:
+        if pipeline.state.capture_stopped:
+            echo(
+                "\n[red]recording stopped by itself: the microphone or audio "
+                "device was lost.[/red] Everything before that is saved.\n"
+                "[dim]Check the device with:  notes check[/dim]"
+            )
         pending = pipeline.state.chunks_pending
         if later:
             # Nothing is being transcribed, so do not claim otherwise.
