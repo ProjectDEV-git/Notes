@@ -584,8 +584,12 @@ class Recorder:
             errors="replace",
         )
         self._started_at = time.monotonic()
-        # Fail fast if the device is bad: ffmpeg exits almost immediately.
-        time.sleep(0.4)
+        # Fail fast if the device is bad: ffmpeg exits soon after starting,
+        # but how soon depends on the audio system (an unreachable PulseAudio
+        # server takes over a second to give up), so watch for a while.
+        deadline = time.monotonic() + 1.5
+        while self._proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
         if self._proc.poll() is not None:
             err = (self._proc.stderr.read() if self._proc.stderr else "") or ""
             hint = ""
