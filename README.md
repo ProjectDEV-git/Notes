@@ -471,6 +471,17 @@ token budget on chain-of-thought instead of answering, so a **non-reasoning
 instruct model is the right choice here**. Change it with `--model` or
 `NOTETAKER_SUMMARY_MODEL`.
 
+### With an NVIDIA graphics card
+
+Transcription uses an NVIDIA graphics card by itself when it can, which is
+several times faster than the processor and matters most for Thai. The card
+also needs NVIDIA's maths libraries (about 1 GB). `notes check` shows a
+*graphics card* row when it finds a card, with the exact command to install
+them if they are missing. Before using the card NoteTaker does a one-second
+test run; if anything fails, it uses the processor as before, so the card can
+never stop a class being recorded. `NOTETAKER_DEVICE=cpu` turns it off.
+Macs use the processor (faster-whisper has no Apple GPU support).
+
 ### Verified on a real recording
 
 Tested end to end on a genuine 10-minute university lecture (Aristotle's logic),

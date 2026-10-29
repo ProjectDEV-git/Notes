@@ -70,6 +70,8 @@ class Check:
     ok: bool
     detail: str
     fix: str = ""
+    # Nice to have: shown, but never what makes the check fail.
+    optional: bool = False
 
 
 def _pkg_hint(linux: str, mac: str, windows: str = "") -> str:
@@ -159,6 +161,23 @@ def run_checks() -> list[Check]:
             )
         )
 
+    from . import gpu
+
+    # Only mentioned when there is an NVIDIA card: on every other computer
+    # the processor is the right choice and a row saying so is just noise.
+    if gpu.cuda_devices() > 0:
+        ready = gpu.libraries_ok()
+        checks.append(
+            Check(
+                "graphics card (faster transcription)",
+                ready,
+                "NVIDIA card found and ready" if ready
+                else "NVIDIA card found, but its libraries are missing (using the processor)",
+                "" if ready else gpu.install_hint() + "   (about 1 GB, optional)",
+                optional=True,
+            )
+        )
+
     return checks
 
 
@@ -170,7 +189,8 @@ def print_checks(checks: list[Check]) -> bool:
         table.add_column("what")
         table.add_column("status")
         for check in checks:
-            mark = "[green]✓[/green]" if check.ok else "[red]✗[/red]"
+            mark = ("[green]✓[/green]" if check.ok
+                    else "[yellow]![/yellow]" if check.optional else "[red]✗[/red]")
             table.add_row(mark, check.name, check.detail)
         console.print(table)
     else:
@@ -182,7 +202,7 @@ def print_checks(checks: list[Check]) -> bool:
         out("\n[bold]To fix:[/bold]")
         for check in fixes:
             out(f"  {check.name}\n    [cyan]{check.fix}[/cyan]")
-    return all(c.ok for c in checks)
+    return all(c.ok or c.optional for c in checks)
 
 
 # --------------------------------------------------------------------------

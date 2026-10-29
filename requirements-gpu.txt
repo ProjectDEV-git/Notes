@@ -1,0 +1,6 @@
+# NVIDIA graphics card support (optional, Windows and Linux).
+# About 1 GB. Only useful with an NVIDIA card and its driver installed;
+# `notes check` says whether you have one and prints the exact command.
+# CUDA 12 / cuDNN 9 are what ctranslate2 4.x is built against.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*

@@ -87,8 +87,12 @@ FFMPEG_STOP_TIMEOUT = 5.0
 # Never use a ".en" variant here, it cannot transcribe Thai.
 ASR_MODEL = "small"
 ASR_MODEL_HQ = "large-v3-turbo"  # optional post-lecture high-accuracy re-run
-ASR_DEVICE = "cpu"
+# "auto" uses an NVIDIA graphics card when one is present AND its libraries
+# pass a test run, otherwise the processor. See notetaker/gpu.py.
+# Override with NOTETAKER_DEVICE=cpu (never use the card) or cuda.
+ASR_DEVICE = os.environ.get("NOTETAKER_DEVICE", "auto")
 COMPUTE_TYPE = "int8"  # fast CPU path for ctranslate2
+GPU_COMPUTE_TYPE = os.environ.get("NOTETAKER_GPU_COMPUTE_TYPE", "float16")
 # Leave two cores for capture and the display, so a 4-core school laptop does
 # not starve ffmpeg. Override with NOTETAKER_CPU_THREADS.
 CPU_THREADS = int(os.environ.get("NOTETAKER_CPU_THREADS") or max(1, (os.cpu_count() or 4) - 2))
