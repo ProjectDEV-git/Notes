@@ -98,7 +98,7 @@ The window fits a narrow screen and follows your computer's dark mode.
   NoteTaker; a class that is still recording is stopped and saved first.
   Closing that window by accident is safe too: the recording notices within
   half a minute, stops, saves, and writes its notes.
-- **Open it without the icon** with `notes ui`, or **11** in the menu.
+- **Open it without the icon** with `notes ui`, or **12** in the menu.
 
 ### From the terminal
 
@@ -125,7 +125,8 @@ notes            # opens a menu: pick a number, press Enter
   8. Record with more options — language, length, reading level
   9. Check that everything works — microphone, notes writer
   10. Make notes from a video — YouTube link or a video file
-  11. Open the NoteTaker window — buttons instead of numbers
+  11. Practise for a test — questions from your notes
+  12. Open the NoteTaker window — buttons instead of numbers
 ```
 
 It asks which subject, and how long the class is. Enter is a valid answer to
@@ -140,6 +141,9 @@ notes online     # record an online class (Zoom/Teams/YouTube)
 notes video LINK # make notes from a YouTube link or a video file
 notes last       # show the notes from your last class
 notes all        # list every class
+notes search X   # find where X was said, in every class (with video links)
+notes quiz       # practise with questions from your last class's notes
+notes cleanup    # free space: delete old recordings, keep the notes
 notes check      # confirm your microphone and notes writer work
 notes ui         # open the NoteTaker window in your browser
 notes update     # update NoteTaker and Python dependencies safely
@@ -197,8 +201,9 @@ Enter.
   platforms, and over a thousand others, via
   [yt-dlp](https://github.com/yt-dlp/yt-dlp). Video and audio **files** work
   too: `.mp4`, `.mov`, `.mkv`, `.mp3`, `.m4a`, and so on.
-- **The first link downloads one extra helper** (about 60 MB) and then never
-  again. Files do not need it.
+- **Links need one extra helper** (about 60 MB). The installer offers it, so
+  it is ready before your first lesson; if you skipped it, it downloads the
+  first time you paste a link. Files do not need it.
 - **Subtitles written by the creator are used as the transcript** when they
   are in the language being spoken. They are accurate and instant, which
   matters most for Thai: no waiting several times the video's length for
@@ -237,6 +242,7 @@ Anything else is passed to the full CLI:
 notes record --title "Physics week 4" --lang th --minutes 50
 notes summarize physics --hq
 notes export physics -o notes.md
+notes export physics --pdf          # to print, or send to a friend
 notes summarize physics --rerun --level university   # denser wording
 ```
 
@@ -263,8 +269,9 @@ notetaker video <link-or-file> [--title T] [--lang L] [--later] [--hq]
                [--from 2:30] [--to 45:00]  # only that part of the video
 notetaker list                         # past recordings
 notetaker show <id> [--transcript]
+notetaker search <words> [-n 5]        # where was this said? every class, with times
 notetaker summarize <id> [--rerun] [--hq] [--level school|university]
-notetaker export <id> [--md|--txt] [-o FILE]
+notetaker export <id> [--md|--txt|--html|--pdf] [-o FILE]
 notetaker lang list|add|edit|remove    # languages your notes are written in
 ```
 
@@ -292,6 +299,35 @@ Adding a language? A pack can carry its own school prompts and headings
 (`map_school`, `reduce_school`, `key_ideas_school`, ...). A pack without them
 simply uses its normal ones, so nothing you have already written needs
 changing. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
+
+### Practise for a test
+
+```bash
+notes quiz                 # questions from your last class, one at a time
+notes quiz physics --list  # every question and answer, to read through
+notes quiz physics --anki  # flashcards for Anki (File > Import)
+```
+
+Every answer is a line from your own notes, word for word: the model only
+writes the questions, so practising can never teach you something the class
+did not say. "Words to know" become flashcards without any model at all.
+Questions are saved, so the second time is instant; `--new` writes fresh ones.
+
+### Notes in another language
+
+Learning from an English video but want Thai notes? Ask for them:
+
+```bash
+notes video https://youtu.be/... --notes-lang th
+notes record --notes-lang th              # works for any class
+export NOTETAKER_NOTES_LANGUAGE=th        # or make it the default
+```
+
+The menu asks too (Enter keeps the language of the lesson). The notes are
+written and checked against the transcript in the language spoken, then
+translated as the last step, so translating cannot add points nobody said.
+Numbers, units and formulas must come through unchanged: a line where they do
+not is left in the original language rather than risk a wrong figure.
 
 ## Languages
 
@@ -507,6 +543,17 @@ token budget on chain-of-thought instead of answering, so a **non-reasoning
 instruct model is the right choice here**. Change it with `--model` or
 `NOTETAKER_SUMMARY_MODEL`.
 
+### With an NVIDIA graphics card
+
+Transcription uses an NVIDIA graphics card by itself when it can, which is
+several times faster than the processor and matters most for Thai. The card
+also needs NVIDIA's maths libraries (about 1 GB). `notes check` shows a
+*graphics card* row when it finds a card, with the exact command to install
+them if they are missing. Before using the card NoteTaker does a one-second
+test run; if anything fails, it uses the processor as before, so the card can
+never stop a class being recorded. `NOTETAKER_DEVICE=cpu` turns it off.
+Macs use the processor (faster-whisper has no Apple GPU support).
+
 ### Verified on a real recording
 
 Tested end to end on a genuine 10-minute university lecture (Aristotle's logic),
@@ -588,10 +635,11 @@ for the whole day rather than waiting after each period.
   once with `notes catchup`.
 - Summarizing is CPU-bound and will make the laptop warm. A faster machine, or
   a smaller model via `--summary-model`, cuts the wait proportionally.
-- **Recordings are never deleted.** A one-hour class keeps about 115 MB of
-  audio so `--hq` re-runs stay possible. Delete old sessions yourself from
-  `~/.local/share/notetaker/sessions/` (on Windows,
-  `%LOCALAPPDATA%\NoteTaker\sessions\`) if space runs short.
+- **Recordings are kept until you clean up.** A one-hour class keeps about
+  115 MB of audio so `--hq` re-runs stay possible. `notes cleanup` deletes
+  the recordings of finished classes older than 30 days (`--older-than 7`
+  to change), keeping every note and transcript. It asks first, and never
+  touches a class that still needs `notes catchup`.
 - **macOS needs a loopback driver for online classes.** BlackHole or similar;
   see Install. In-person recording works with no extra setup.
 - **Windows needs Stereo Mix (or VB-CABLE) for online classes.** Many

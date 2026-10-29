@@ -70,6 +70,8 @@ class Check:
     ok: bool
     detail: str
     fix: str = ""
+    # Nice to have: shown, but never what makes the check fail.
+    optional: bool = False
 
 
 def _pkg_hint(linux: str, mac: str, windows: str = "") -> str:
@@ -159,6 +161,23 @@ def run_checks() -> list[Check]:
             )
         )
 
+    from . import gpu
+
+    # Only mentioned when there is an NVIDIA card: on every other computer
+    # the processor is the right choice and a row saying so is just noise.
+    if gpu.cuda_devices() > 0:
+        ready = gpu.libraries_ok()
+        checks.append(
+            Check(
+                "graphics card (faster transcription)",
+                ready,
+                "NVIDIA card found and ready" if ready
+                else "NVIDIA card found, but its libraries are missing (using the processor)",
+                "" if ready else gpu.install_hint() + "   (about 1 GB, optional)",
+                optional=True,
+            )
+        )
+
     return checks
 
 
@@ -170,7 +189,8 @@ def print_checks(checks: list[Check]) -> bool:
         table.add_column("what")
         table.add_column("status")
         for check in checks:
-            mark = "[green]✓[/green]" if check.ok else "[red]✗[/red]"
+            mark = ("[green]✓[/green]" if check.ok
+                    else "[yellow]![/yellow]" if check.optional else "[red]✗[/red]")
             table.add_row(mark, check.name, check.detail)
         console.print(table)
     else:
@@ -182,7 +202,7 @@ def print_checks(checks: list[Check]) -> bool:
         out("\n[bold]To fix:[/bold]")
         for check in fixes:
             out(f"  {check.name}\n    [cyan]{check.fix}[/cyan]")
-    return all(c.ok for c in checks)
+    return all(c.ok or c.optional for c in checks)
 
 
 # --------------------------------------------------------------------------
@@ -318,6 +338,27 @@ def pick_class_length() -> int:
     return config.DEFAULT_CLASS_MINUTES
 
 
+def pick_notes_language() -> str | None:
+    """Which language to write the notes in. None = the language spoken.
+
+    Lets a Thai student get Thai notes from an English lesson without
+    knowing that --notes-lang exists.
+    """
+    from . import languages
+
+    codes = list(config.supported_languages())
+    out("\n[bold]What language should the notes be in?[/bold]")
+    out("  [bold]1[/bold]. The same language as the lesson [dim](recommended)[/dim]")
+    for index, code in enumerate(codes, start=2):
+        out(f"  [bold]{index}[/bold]. {languages.get(code).name}")
+    answer = ask("\nNumber (Enter = same as the lesson): ", "1")
+    try:
+        number = int(answer)
+    except ValueError:
+        return None
+    return codes[number - 2] if 2 <= number < len(codes) + 2 else None
+
+
 def pick_level() -> str:
     """Who the notes are written for. Only asked under 'more options'.
 
@@ -389,6 +430,7 @@ def _record(source: str) -> int:
 def _record_with_options() -> int:
     language = pick_language()
     level = pick_level()
+    notes_lang = pick_notes_language()
     title = pick_subject()
     minutes = pick_class_length()
     online = confirm("\nIs this an online class (Zoom/Teams/YouTube)?", default=False)
@@ -399,6 +441,8 @@ def _record_with_options() -> int:
         "--lang", language,
         "--level", level,
     ]
+    if notes_lang:
+        argv += ["--notes-lang", notes_lang]
     if title:
         argv += ["--title", title]
     if minutes:
@@ -426,10 +470,16 @@ def _save_to_file() -> int:
     session = pick_session("save")
     if session is None:
         return 0
+    out("\n[bold]What kind of file?[/bold]")
+    out("  [bold]1[/bold]. PDF [dim](to print or send; recommended)[/dim]")
+    out("  [bold]2[/bold]. Web page [dim](opens in any browser)[/dim]")
+    out("  [bold]3[/bold]. Markdown [dim](plain text with formatting marks)[/dim]")
+    kind = ask("\nNumber (Enter = PDF): ", "1")
+    flag, suffix = {"2": ("--html", "html"), "3": ("--md", "md")}.get(kind, ("--pdf", "pdf"))
     destination = ask(
-        f"\nSave as (Enter for {session.id}.md): ", f"{session.id}.md"
+        f"\nSave as (Enter for {session.id}.{suffix}): ", f"{session.id}.{suffix}"
     )
-    return _cli("export", session.id, "-o", destination)
+    return _cli("export", session.id, flag, "-o", destination)
 
 
 def _check() -> int:
@@ -480,7 +530,13 @@ def _from_video() -> int:
     if not source:
         out("[yellow]Nothing was pasted. Nothing was changed.[/yellow]")
         return 0
-    return _cli("video", source)
+    notes_lang = pick_notes_language()
+    return _cli("video", source, *(["--notes-lang", notes_lang] if notes_lang else []))
+
+
+def _quiz() -> int:
+    session = pick_session("practise")
+    return 0 if session is None else _cli("quiz", session.id)
 
 
 def options() -> list[Option]:
@@ -500,7 +556,8 @@ def options() -> list[Option]:
         Option("9", "Check that everything works", "microphone, notes writer", _check),
         Option("10", "Make notes from a video", "YouTube link or a video file",
                _from_video),
-        Option("11", "Open the NoteTaker window", "buttons instead of numbers",
+        Option("11", "Practise for a test", "questions from your notes", _quiz),
+        Option("12", "Open the NoteTaker window", "buttons instead of numbers",
                lambda: _cli("ui")),
     ]
 

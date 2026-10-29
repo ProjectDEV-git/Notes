@@ -609,7 +609,7 @@ def test_export_writes_where_the_student_ran_notes(db, tmp_path, monkeypatch):
 def test_the_menu_takes_a_pasted_link(monkeypatch):
     from notetaker import menu
 
-    with patch("builtins.input", side_effect=["'/My Videos/lesson.mp4'"]), \
+    with patch("builtins.input", side_effect=["'/My Videos/lesson.mp4'", ""]), \
             patch("notetaker.cli.main", return_value=0) as run:
         assert menu._from_video() == 0
     run.assert_called_once_with(["video", "/My Videos/lesson.mp4"])

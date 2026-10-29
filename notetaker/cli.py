@@ -429,7 +429,7 @@ def cmd_record(args: argparse.Namespace) -> int:
         )
     return _summarize_session(
         session, model=args.summary_model, premapped=premapped,
-        level=getattr(args, "level", None),
+        level=getattr(args, "level", None), notes_lang=args.notes_lang,
     )
 
 
@@ -442,6 +442,7 @@ def _summarize_session(
     quiet: bool = False,
     premapped: tuple[list[str], list[str], int] | None = None,
     level: str | None = None,
+    notes_lang: str | None = None,
 ) -> int:
     segments = store.load_transcript(session)
     if not segments:
@@ -483,11 +484,32 @@ def _summarize_session(
     markdown = notes.markdown
     if session.source_kind == config.SOURCE_VIDEO:
         markdown = _annotate_video_notes(session, markdown, segments)
+    target = notes_lang or config.NOTES_LANGUAGE
+    if target and target != notes.language:
+        markdown = _translated(markdown, notes.language, target, model, quiet)
     store.write_notes(session, markdown)
     echo()
     echo(markdown)
     echo(f"[green]notes saved:[/green] {session.notes_path}")
     return 0
+
+
+def _translated(markdown: str, source: str, target: str, model: str, quiet: bool) -> str:
+    """The notes in another language, or as they are if that fails.
+
+    Written and checked in the spoken language first (see translate.py);
+    a translation failure must never cost the notes themselves.
+    """
+    from . import languages, translate
+
+    if not quiet:
+        echo(f"[dim]writing the notes in {languages.get(target).name}...[/dim]")
+    try:
+        return translate.translate_notes(markdown, source, target, model=model)
+    except summarize.SummarizerError as exc:
+        echo(f"[yellow]could not translate the notes ({exc}); "
+             f"keeping them in {languages.get(source).name}[/yellow]")
+        return markdown
 
 
 def _annotate_video_notes(session: store.Session, markdown: str, segments) -> str:
@@ -537,7 +559,8 @@ def cmd_summarize(args: argparse.Namespace) -> int:
             )
         echo(f"[dim]{len(segments)} segments[/dim]")
 
-    return _summarize_session(session, model=args.model, level=getattr(args, "level", None))
+    return _summarize_session(session, model=args.model, level=getattr(args, "level", None),
+                              notes_lang=args.notes_lang)
 
 
 # --------------------------------------------------------------------------
@@ -756,7 +779,8 @@ def _import_one(
             return 0
 
     session = store.get_session(session.id) or session
-    return _summarize_session(session, model=args.summary_model, level=args.level)
+    return _summarize_session(session, model=args.summary_model, level=args.level,
+                              notes_lang=args.notes_lang)
 
 
 
@@ -892,7 +916,7 @@ def cmd_catchup(args: argparse.Namespace) -> int:
 
         if _summarize_session(
             session, model=args.summary_model, quiet=True,
-            level=getattr(args, "level", None),
+            level=getattr(args, "level", None), notes_lang=args.notes_lang,
         ) != 0:
             failed += 1
             continue
@@ -903,6 +927,182 @@ def cmd_catchup(args: argparse.Namespace) -> int:
     if failed:
         echo("[dim]The ones that failed still have their sound and transcript.[/dim]")
     return 0 if not failed else 1
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    """Where was this said? Every class, with times (and links for videos)."""
+    from . import search, timestamps, video
+
+    try:
+        from rich.markup import escape
+    except ImportError:  # pragma: no cover - rich is a listed dependency
+        def escape(text: str) -> str:
+            return text
+
+    query = " ".join(args.query).strip()
+    wanted = search.terms(query)
+    if not wanted:
+        return fail("type what to look for, for example:  notes search photosynthesis")
+    results = search.search(query)
+    if not results:
+        echo(f"Nothing found for [bold]{escape(query)}[/bold].")
+        echo("[dim]Try fewer words, or another spelling. Every word typed must appear.[/dim]")
+        return 1
+
+    total = sum(len(r.hits) for r in results)
+    echo(f"[bold]{escape(query)}[/bold]: {total} mention(s) in {len(results)} class(es)\n")
+    for found in results:
+        session = found.session
+        when = session.started_at.replace("T", " ")[:16]
+        echo(f"[bold]{escape(session.title)}[/bold] [dim]{when} · {session.id}[/dim]")
+        link, offset = None, 0.0
+        if session.source_kind == config.SOURCE_VIDEO:
+            meta = video.load_meta(session.directory)
+            link, offset = video.link_for(meta), float(meta.get("offset") or 0)
+        for hit in found.hits[: args.limit]:
+            at = hit.start + offset
+            label = timestamps.format_time(at)
+            line = escape(search.snippet(hit.text, wanted))
+            echo(f"  [cyan]{label:>7}[/cyan]  {line}")
+            if link:
+                echo(f"           [dim]{link(max(at - timestamps.LEAD_IN_SECONDS, 0))}[/dim]")
+        hidden = len(found.hits) - args.limit
+        if hidden > 0:
+            echo(f"  [dim]… and {hidden} more. See them all with:  "
+                 f"notes show {session.id} --transcript[/dim]")
+        if not found.hits and found.in_notes:
+            echo("  [dim]in the notes[/dim]")
+        echo()
+    return 0
+
+
+def _latest_with_notes() -> store.Session | None:
+    for session in store.list_sessions():
+        if session.has_notes and session.notes_path.exists():
+            return session
+    return None
+
+
+def cmd_quiz(args: argparse.Namespace) -> int:
+    """Practice questions and flashcards from a class's notes."""
+    import random
+
+    from . import quiz
+
+    try:
+        session = store.resolve_session(args.session) if args.session else _latest_with_notes()
+    except KeyError as exc:
+        return fail(str(exc))
+    if session is None or not session.notes_path.exists():
+        return fail("no notes to practise from yet. Write them first with:  notes catchup")
+
+    cards = None if args.new else quiz.load(session.directory)
+    if cards is None:
+        markdown = session.notes_path.read_text(encoding="utf-8")
+        use_model = summarize.ollama_available()
+        if not use_model:
+            echo("[yellow]Ollama is not running[/yellow], so only the 'words to know' "
+                 f"cards can be made. To start it, {summarize.start_ollama_hint()}.")
+        else:
+            echo("[dim]writing practice questions from your notes...[/dim]")
+        try:
+            cards = quiz.build(markdown, session.language, model=args.model, use_model=use_model)
+        except summarize.SummarizerError as exc:
+            echo(f"[yellow]could not write questions ({exc})[/yellow]")
+            use_model = False
+            cards = quiz.build(markdown, session.language, use_model=False)
+        if cards and use_model:
+            quiz.save(session.directory, cards)  # instant next time
+    if not cards:
+        return fail("no practice questions could be made from these notes")
+
+    if args.anki is not None:
+        destination = (config.user_path(args.anki) if args.anki
+                       else config.caller_dir() / f"{session.id}-flashcards.txt")
+        destination.write_text(quiz.to_anki(cards, session.title), encoding="utf-8")
+        echo(f"[green]{len(cards)} flashcards saved:[/green] {destination}\n"
+             "[dim]In Anki: File > Import, then pick that file.[/dim]")
+        return 0
+
+    from rich.markup import escape
+
+    if args.list or not sys.stdin.isatty():
+        for number, card in enumerate(cards, start=1):
+            echo(f"[bold]{number}. {escape(card.question)}[/bold]")
+            echo(f"   {escape(card.answer)}" + (f" [dim]({card.time})[/dim]" if card.time else ""))
+        return 0
+
+    from .menu import ask
+
+    order = list(cards)
+    if not args.in_order:
+        random.shuffle(order)
+    echo(f"[bold]{escape(session.title)}[/bold]: {len(order)} questions. "
+         "[dim]Answer in your head, then press Enter. Type q to stop.[/dim]")
+    score = asked = 0
+    for number, card in enumerate(order, start=1):
+        echo(f"\n[bold]{number}/{len(order)}.[/bold] {escape(card.question)}")
+        if ask("  (Enter to see the answer) ", "").lower() == "q":
+            break
+        when = f" [dim](said at {card.time})[/dim]" if card.time else ""
+        echo(f"  [cyan]{escape(card.answer)}[/cyan]{when}")
+        reply = ask("  Did you get it? [y/N/q] ", "n").lower()
+        if reply == "q":
+            break
+        asked += 1
+        score += reply.startswith("y")
+    if asked:
+        echo(f"\n[green]You got {score} of {asked}.[/green]")
+        if score < asked:
+            echo(f"[dim]Read the notes again with:  notes show {session.id}[/dim]")
+    return 0
+
+
+def _size(num_bytes: float) -> str:
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if num_bytes < 1024 or unit == "GB":
+            return f"{num_bytes:.0f} {unit}" if unit == "bytes" else f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024
+    return f"{num_bytes:.1f} GB"  # pragma: no cover
+
+
+def cmd_cleanup(args: argparse.Namespace) -> int:
+    """Free space by deleting old recordings. Notes and transcripts stay."""
+    from .menu import confirm
+
+    sessions = store.audio_to_free(args.older_than)
+    if not sessions:
+        echo(f"[green]Nothing to clean up.[/green] [dim]No finished class older than "
+             f"{args.older_than} days still has its recording.[/dim]")
+        return 0
+    sizes = {s.id: s.audio_path.stat().st_size for s in sessions}
+    total = sum(sizes.values())
+    echo(f"[bold]{len(sessions)} old recording(s), {_size(total)}[/bold] can be deleted. "
+         "Their notes and transcripts are kept.")
+    for session in sessions[:10]:
+        when = session.started_at.replace("T", " ")[:10]
+        echo(f"  • {session.title} [dim]{when}, {_size(sizes[session.id])}[/dim]")
+    if len(sessions) > 10:
+        echo(f"  [dim]… and {len(sessions) - 10} more[/dim]")
+    echo("[dim]Without the recording, 'summarize --hq' cannot redo those transcripts.[/dim]")
+
+    if args.dry_run:
+        return 0
+    if not args.yes:
+        if not sys.stdin.isatty():
+            return fail("add --yes to delete without being asked")
+        if not confirm("\nDelete these recordings?", default=False):
+            echo("[dim]Nothing was deleted.[/dim]")
+            return 0
+    freed = 0
+    for session in sessions:
+        try:
+            session.audio_path.unlink()
+            freed += sizes[session.id]
+        except OSError as exc:
+            echo(f"[yellow]could not delete {session.audio_path}: {exc}[/yellow]")
+    echo(f"[green]Freed {_size(freed)}.[/green]")
+    return 0
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -961,6 +1161,40 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _export_printable(session: store.Session, args: argparse.Namespace) -> int:
+    """A page to print or share, and a PDF when a browser can make one."""
+    from . import printable, quiz
+
+    if not session.notes_path.exists():
+        return fail("no notes for this class yet. Write them with:  notes catchup")
+    markdown = session.notes_path.read_text(encoding="utf-8")
+    page_html = printable.to_html(
+        markdown, session.title, quiz.notes_language(markdown, session.language))
+
+    wanted = config.user_path(args.output) if args.output else None
+    base = (wanted.with_suffix("") if wanted
+            else config.caller_dir() / session.id)
+    page = base.with_suffix(".html")
+    page.write_text(page_html, encoding="utf-8")
+    if not args.pdf:
+        echo(f"[green]exported:[/green] {page}\n"
+             "[dim]Open it in a browser to read, print, or send.[/dim]")
+        return 0
+
+    pdf = base.with_suffix(".pdf")
+    browser = printable.find_browser()
+    if browser and printable.html_to_pdf(page, pdf, browser):
+        page.unlink(missing_ok=True)
+        echo(f"[green]exported:[/green] {pdf}")
+        return 0
+    echo(
+        f"[yellow]No browser could make the PDF here[/yellow], so the notes were saved as "
+        f"a page instead:\n  {page}\n"
+        "[dim]Open it, press Ctrl-P (Cmd-P on a Mac), and choose 'Save as PDF'.[/dim]"
+    )
+    return 0
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     try:
         session = store.resolve_session(args.session)
@@ -973,6 +1207,8 @@ def cmd_export(args: argparse.Namespace) -> int:
             return fail("no transcript to export")
         content = "\n".join(s.text for s in segments)
         suffix = ".txt"
+    elif args.html or args.pdf:
+        return _export_printable(session, args)
     else:
         if not session.notes_path.exists():
             return fail("no notes for this class yet. Write them with:  notes catchup")
@@ -1143,6 +1379,15 @@ Start here (run from the project directory):
 # --------------------------------------------------------------------------
 # argument parsing
 # --------------------------------------------------------------------------
+def _add_notes_lang(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--notes-lang", default=config.NOTES_LANGUAGE,
+        choices=list(config.supported_languages()),
+        help="write the notes in this language, e.g. th for Thai notes from an "
+             "English lesson. Default: the language spoken",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="notetaker",
@@ -1256,6 +1501,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="who the notes are written for. Default: school",
     )
 
+    _add_notes_lang(record)
+    _add_notes_lang(video_cmd)
+
     listing = subparsers.add_parser("list", help="list past recordings")
     listing.add_argument("--limit", "-n", type=positive_int, default=20)
 
@@ -1271,6 +1519,38 @@ def build_parser() -> argparse.ArgumentParser:
     catchup.add_argument(
         "--level", default=config.NOTES_LEVEL, choices=list(config.NOTES_LEVELS),
     )
+
+    _add_notes_lang(catchup)
+
+    search_cmd = subparsers.add_parser(
+        "search", help="find where something was said, across every class"
+    )
+    search_cmd.add_argument("query", nargs="+", help="words to look for")
+    search_cmd.add_argument(
+        "--limit", "-n", type=positive_int, default=5,
+        help="mentions to show per class (default 5)",
+    )
+
+    cleanup = subparsers.add_parser(
+        "cleanup", help="free space: delete old recordings, keep notes and transcripts"
+    )
+    cleanup.add_argument("--older-than", type=non_negative_int, default=30, metavar="DAYS",
+                         help="only classes at least this many days old (default 30)")
+    cleanup.add_argument("--dry-run", action="store_true", help="only show what would go")
+    cleanup.add_argument("--yes", "-y", action="store_true", help="do not ask first")
+
+    quiz_cmd = subparsers.add_parser(
+        "quiz", help="practise with questions and flashcards from a class's notes"
+    )
+    quiz_cmd.add_argument("session", nargs="?", default=None,
+                          help="class id or part of the title. Default: the latest with notes")
+    quiz_cmd.add_argument("--list", action="store_true",
+                          help="print every question and answer instead of asking")
+    quiz_cmd.add_argument("--anki", nargs="?", const="", default=None, metavar="FILE",
+                          help="save flashcards for Anki (File > Import)")
+    quiz_cmd.add_argument("--in-order", action="store_true", help="do not shuffle")
+    quiz_cmd.add_argument("--new", action="store_true", help="write fresh questions")
+    quiz_cmd.add_argument("--model", default=config.SUMMARY_MODEL, help="Ollama model")
 
     show = subparsers.add_parser("show", help="show notes for a recording")
     show.add_argument("session", help="session id or part of the title")
@@ -1289,10 +1569,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="who the notes are written for. Default: school",
     )
 
+    _add_notes_lang(summarize_cmd)
+
     export = subparsers.add_parser("export", help="write notes or transcript to a file")
     export.add_argument("session", help="session id or part of the title")
     export.add_argument("--md", action="store_true", help="export notes as markdown (default)")
     export.add_argument("--txt", action="store_true", help="export the raw transcript")
+    export.add_argument("--html", action="store_true",
+                        help="a page to print or share (opens in any browser)")
+    export.add_argument("--pdf", action="store_true",
+                        help="a PDF, made with a browser already on this computer")
     export.add_argument("--output", "-o", default=None)
 
     lang = subparsers.add_parser("lang", help="add or edit the languages notes are written in")
@@ -1324,6 +1610,9 @@ COMMANDS = {
     "catchup": cmd_catchup,
     "video": cmd_video,
     "list": cmd_list,
+    "search": cmd_search,
+    "quiz": cmd_quiz,
+    "cleanup": cmd_cleanup,
     "show": cmd_show,
     "summarize": cmd_summarize,
     "export": cmd_export,

@@ -87,8 +87,12 @@ FFMPEG_STOP_TIMEOUT = 5.0
 # Never use a ".en" variant here, it cannot transcribe Thai.
 ASR_MODEL = "small"
 ASR_MODEL_HQ = "large-v3-turbo"  # optional post-lecture high-accuracy re-run
-ASR_DEVICE = "cpu"
+# "auto" uses an NVIDIA graphics card when one is present AND its libraries
+# pass a test run, otherwise the processor. See notetaker/gpu.py.
+# Override with NOTETAKER_DEVICE=cpu (never use the card) or cuda.
+ASR_DEVICE = os.environ.get("NOTETAKER_DEVICE", "auto")
 COMPUTE_TYPE = "int8"  # fast CPU path for ctranslate2
+GPU_COMPUTE_TYPE = os.environ.get("NOTETAKER_GPU_COMPUTE_TYPE", "float16")
 # Leave two cores for capture and the display, so a 4-core school laptop does
 # not starve ffmpeg. Override with NOTETAKER_CPU_THREADS.
 CPU_THREADS = int(os.environ.get("NOTETAKER_CPU_THREADS") or max(1, (os.cpu_count() or 4) - 2))
@@ -170,6 +174,19 @@ STRIP_THINK_BLOCKS = True
 # Override with --level or NOTETAKER_NOTES_LEVEL.
 NOTES_LEVEL = os.environ.get("NOTETAKER_NOTES_LEVEL", "school")
 NOTES_LEVELS = ("school", "university")
+
+# The language the notes are written in. Empty = the language spoken in the
+# class. Set it to read every class in one language, e.g. Thai notes from
+# English lessons. Override with --notes-lang or NOTETAKER_NOTES_LANGUAGE.
+NOTES_LANGUAGE = os.environ.get("NOTETAKER_NOTES_LANGUAGE") or None
+# Lines per translation call: enough to keep context, small enough that
+# llama3.2:3b answers every line within the token budget.
+TRANSLATE_BATCH_LINES = 12
+TRANSLATE_MAX_TOKENS = 900
+
+# Practice questions: facts per model call, and its token budget.
+QUIZ_BATCH_FACTS = 10
+QUIZ_MAX_TOKENS = 700
 
 
 def prompts_for(language: str | None, level: str | None = None) -> dict[str, str]:

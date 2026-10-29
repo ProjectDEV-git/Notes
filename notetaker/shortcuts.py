@@ -27,6 +27,9 @@ for _words, _argv in [
     (("online", "zoom", "teams", "system", "meet", "youtube"), ["record", "--source", "system", "--live-notes"]),
     (("all", "ls", "list"), ["list"]),
     (("show", "open"), ["show"]),
+    (("search", "find"), ["search"]),
+    (("quiz", "practice", "practise", "revise", "flashcards"), ["quiz"]),
+    (("cleanup", "clean", "tidy"), ["cleanup"]),
     (("check", "test", "doctor", "setup"), ["check", "--listen"]),
     (("update", "upgrade"), ["update"]),
     (("menu",), ["menu"]),
@@ -48,6 +51,9 @@ notes video LINK   make notes from a YouTube link or a video file
 notes setup-online one-time setup so online classes can be recorded
 notes last         show the notes from your last class
 notes all          list every class
+notes search X     find where X was said, in every class
+notes quiz         practise with questions from your last class's notes
+notes cleanup      free space: delete old recordings, keep the notes
 notes check        confirm the microphone and notes writer work
 notes ui           open the NoteTaker window in your browser
 notes update       update NoteTaker
