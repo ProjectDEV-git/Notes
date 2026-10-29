@@ -28,6 +28,7 @@ for _words, _argv in [
     (("all", "ls", "list"), ["list"]),
     (("show", "open"), ["show"]),
     (("search", "find"), ["search"]),
+    (("quiz", "practice", "practise", "revise", "flashcards"), ["quiz"]),
     (("check", "test", "doctor", "setup"), ["check", "--listen"]),
     (("update", "upgrade"), ["update"]),
     (("menu",), ["menu"]),
@@ -49,6 +50,7 @@ notes setup-online one-time setup so online classes can be recorded
 notes last         show the notes from your last class
 notes all          list every class
 notes search X     find where X was said, in every class
+notes quiz         practise with questions from your last class's notes
 notes check        confirm the microphone and notes writer work
 notes update       update NoteTaker
 """

@@ -508,6 +508,11 @@ def _from_video() -> int:
     return _cli("video", source, *(["--notes-lang", notes_lang] if notes_lang else []))
 
 
+def _quiz() -> int:
+    session = pick_session("practise")
+    return 0 if session is None else _cli("quiz", session.id)
+
+
 def options() -> list[Option]:
     return [
         Option("1", "Record the class I am in", "uses the microphone",
@@ -525,6 +530,7 @@ def options() -> list[Option]:
         Option("9", "Check that everything works", "microphone, notes writer", _check),
         Option("10", "Make notes from a video", "YouTube link or a video file",
                _from_video),
+        Option("11", "Practise for a test", "questions from your notes", _quiz),
     ]
 
 

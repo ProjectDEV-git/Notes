@@ -917,6 +917,88 @@ def cmd_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def _latest_with_notes() -> store.Session | None:
+    for session in store.list_sessions():
+        if session.has_notes and session.notes_path.exists():
+            return session
+    return None
+
+
+def cmd_quiz(args: argparse.Namespace) -> int:
+    """Practice questions and flashcards from a class's notes."""
+    import random
+
+    from . import quiz
+
+    try:
+        session = store.resolve_session(args.session) if args.session else _latest_with_notes()
+    except KeyError as exc:
+        return fail(str(exc))
+    if session is None or not session.notes_path.exists():
+        return fail("no notes to practise from yet. Write them first with:  notes catchup")
+
+    cards = None if args.new else quiz.load(session.directory)
+    if cards is None:
+        markdown = session.notes_path.read_text(encoding="utf-8")
+        use_model = summarize.ollama_available()
+        if not use_model:
+            echo("[yellow]Ollama is not running[/yellow], so only the 'words to know' "
+                 f"cards can be made. To start it, {summarize.start_ollama_hint()}.")
+        else:
+            echo("[dim]writing practice questions from your notes...[/dim]")
+        try:
+            cards = quiz.build(markdown, session.language, model=args.model, use_model=use_model)
+        except summarize.SummarizerError as exc:
+            echo(f"[yellow]could not write questions ({exc})[/yellow]")
+            use_model = False
+            cards = quiz.build(markdown, session.language, use_model=False)
+        if cards and use_model:
+            quiz.save(session.directory, cards)  # instant next time
+    if not cards:
+        return fail("no practice questions could be made from these notes")
+
+    if args.anki is not None:
+        destination = (config.user_path(args.anki) if args.anki
+                       else config.caller_dir() / f"{session.id}-flashcards.txt")
+        destination.write_text(quiz.to_anki(cards, session.title), encoding="utf-8")
+        echo(f"[green]{len(cards)} flashcards saved:[/green] {destination}\n"
+             "[dim]In Anki: File > Import, then pick that file.[/dim]")
+        return 0
+
+    from rich.markup import escape
+
+    if args.list or not sys.stdin.isatty():
+        for number, card in enumerate(cards, start=1):
+            echo(f"[bold]{number}. {escape(card.question)}[/bold]")
+            echo(f"   {escape(card.answer)}" + (f" [dim]({card.time})[/dim]" if card.time else ""))
+        return 0
+
+    from .menu import ask
+
+    order = list(cards)
+    if not args.in_order:
+        random.shuffle(order)
+    echo(f"[bold]{escape(session.title)}[/bold]: {len(order)} questions. "
+         "[dim]Answer in your head, then press Enter. Type q to stop.[/dim]")
+    score = asked = 0
+    for number, card in enumerate(order, start=1):
+        echo(f"\n[bold]{number}/{len(order)}.[/bold] {escape(card.question)}")
+        if ask("  (Enter to see the answer) ", "").lower() == "q":
+            break
+        when = f" [dim](said at {card.time})[/dim]" if card.time else ""
+        echo(f"  [cyan]{escape(card.answer)}[/cyan]{when}")
+        reply = ask("  Did you get it? [y/N/q] ", "n").lower()
+        if reply == "q":
+            break
+        asked += 1
+        score += reply.startswith("y")
+    if asked:
+        echo(f"\n[green]You got {score} of {asked}.[/green]")
+        if score < asked:
+            echo(f"[dim]Read the notes again with:  notes show {session.id}[/dim]")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     sessions = store.list_sessions(limit=args.limit)
     if not sessions:
@@ -1302,6 +1384,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="mentions to show per class (default 5)",
     )
 
+    quiz_cmd = subparsers.add_parser(
+        "quiz", help="practise with questions and flashcards from a class's notes"
+    )
+    quiz_cmd.add_argument("session", nargs="?", default=None,
+                          help="class id or part of the title. Default: the latest with notes")
+    quiz_cmd.add_argument("--list", action="store_true",
+                          help="print every question and answer instead of asking")
+    quiz_cmd.add_argument("--anki", nargs="?", const="", default=None, metavar="FILE",
+                          help="save flashcards for Anki (File > Import)")
+    quiz_cmd.add_argument("--in-order", action="store_true", help="do not shuffle")
+    quiz_cmd.add_argument("--new", action="store_true", help="write fresh questions")
+    quiz_cmd.add_argument("--model", default=config.SUMMARY_MODEL, help="Ollama model")
+
     show = subparsers.add_parser("show", help="show notes for a recording")
     show.add_argument("session", help="session id or part of the title")
     show.add_argument("--transcript", action="store_true", help="show the transcript instead")
@@ -1356,6 +1451,7 @@ COMMANDS = {
     "video": cmd_video,
     "list": cmd_list,
     "search": cmd_search,
+    "quiz": cmd_quiz,
     "show": cmd_show,
     "summarize": cmd_summarize,
     "export": cmd_export,

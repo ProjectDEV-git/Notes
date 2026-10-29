@@ -63,6 +63,7 @@ notes            # opens a menu: pick a number, press Enter
   8. Record with more options — language, length, reading level
   9. Check that everything works — microphone, notes writer
   10. Make notes from a video — YouTube link or a video file
+  11. Practise for a test — questions from your notes
 ```
 
 It asks which subject, and how long the class is. Enter is a valid answer to
@@ -78,6 +79,7 @@ notes video LINK # make notes from a YouTube link or a video file
 notes last       # show the notes from your last class
 notes all        # list every class
 notes search X   # find where X was said, in every class (with video links)
+notes quiz       # practise with questions from your last class's notes
 notes check      # confirm your microphone and notes writer work
 notes update     # update NoteTaker and Python dependencies safely
 ```
@@ -224,6 +226,19 @@ Adding a language? A pack can carry its own school prompts and headings
 (`map_school`, `reduce_school`, `key_ideas_school`, ...). A pack without them
 simply uses its normal ones, so nothing you have already written needs
 changing. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
+
+### Practise for a test
+
+```bash
+notes quiz                 # questions from your last class, one at a time
+notes quiz physics --list  # every question and answer, to read through
+notes quiz physics --anki  # flashcards for Anki (File > Import)
+```
+
+Every answer is a line from your own notes, word for word: the model only
+writes the questions, so practising can never teach you something the class
+did not say. "Words to know" become flashcards without any model at all.
+Questions are saved, so the second time is instant; `--new` writes fresh ones.
 
 ### Notes in another language
 

@@ -180,6 +180,10 @@ NOTES_LANGUAGE = os.environ.get("NOTETAKER_NOTES_LANGUAGE") or None
 TRANSLATE_BATCH_LINES = 12
 TRANSLATE_MAX_TOKENS = 900
 
+# Practice questions: facts per model call, and its token budget.
+QUIZ_BATCH_FACTS = 10
+QUIZ_MAX_TOKENS = 700
+
 
 def prompts_for(language: str | None, level: str | None = None) -> dict[str, str]:
     """Return the map and reduce prompts for a language and reading level.
