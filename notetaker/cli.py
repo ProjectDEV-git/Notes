@@ -421,11 +421,33 @@ def _summarize_session(
         # where it is, so a failure here never looks like a lost class.
         return fail(f"{exc}\n  transcript: {session.transcript_path}")
 
-    store.write_notes(session, notes.markdown)
+    markdown = notes.markdown
+    if session.source_kind == config.SOURCE_VIDEO:
+        markdown = _annotate_video_notes(session, markdown, segments)
+    store.write_notes(session, markdown)
     echo()
-    echo(notes.markdown)
+    echo(markdown)
     echo(f"[green]notes saved:[/green] {session.notes_path}")
     return 0
+
+
+def _annotate_video_notes(session: store.Session, markdown: str, segments) -> str:
+    """Give each note the time it was said, linked into the video.
+
+    Only for videos: there, a click replays the moment. Best-effort, because
+    a timestamp is a nicety and must never cost the student their notes.
+    """
+    from . import timestamps, video
+
+    try:
+        meta = video.load_meta(session.directory)
+        return timestamps.add_timestamps(
+            markdown, segments,
+            link=video.link_for(meta),
+            offset=float(meta.get("offset") or 0),
+        )
+    except Exception:
+        return markdown
 
 
 def cmd_summarize(args: argparse.Namespace) -> int:
@@ -532,6 +554,7 @@ def cmd_video(args: argparse.Namespace) -> int:
         return 0
 
     session = store.create_session(title, config.SOURCE_VIDEO, origin)
+    video.save_meta(session.directory, url=None if is_file else origin, offset=0)
     download_dir = session.directory / "download"
     captions: list = []
     use_captions = bool(info and info.caption_key and not args.whisper)

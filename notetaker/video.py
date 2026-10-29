@@ -26,7 +26,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 from . import config
 from .asr import Segment
@@ -100,6 +100,55 @@ def clean_pasted(text: str) -> str:
 def title_from_filename(path: Path) -> str:
     """'week_4-photosynthesis.mp4' -> 'week 4 photosynthesis'."""
     return re.sub(r"[_\-.]+", " ", path.stem).strip() or "Video"
+
+
+# --------------------------------------------------------------------------
+# Remembering where a class came from
+# --------------------------------------------------------------------------
+META_NAME = "video.json"
+
+
+def save_meta(folder: Path, **fields) -> None:
+    """What the notes need later: the link, chapters, and any trim offset.
+
+    Kept beside audio.wav rather than in the database, so `--rerun` and
+    `catchup` can rebuild links long after the import.
+    """
+    from .artifacts import write_text_atomic
+
+    write_text_atomic(folder / META_NAME, json.dumps(fields, ensure_ascii=False, indent=1))
+
+
+def load_meta(folder: Path) -> dict:
+    try:
+        data = json.loads((folder / META_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def timestamp_url(url: str, seconds: float) -> str:
+    """A link that opens the video at `seconds`.
+
+    YouTube reads `t=` from the query; Vimeo and plain media files read a
+    `#t=` fragment. On any other site the fragment is harmless.
+    """
+    at = max(int(seconds), 0)
+    parts = urlparse(url)
+    host = parts.netloc.lower()
+    if host.endswith("youtube.com") or host.endswith("youtu.be"):
+        query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "t"]
+        query.append(("t", f"{at}s"))
+        return urlunparse(parts._replace(query=urlencode(query), fragment=""))
+    fragment = f"t={at}s" if host.endswith("vimeo.com") else f"t={at}"
+    return urlunparse(parts._replace(fragment=fragment))
+
+
+def link_for(meta: dict) -> Callable[[float], str] | None:
+    url = meta.get("url")
+    if isinstance(url, str) and urlparse(url).scheme in ("http", "https"):
+        return lambda seconds: timestamp_url(url, seconds)
+    return None
 
 
 # --------------------------------------------------------------------------

@@ -134,6 +134,11 @@ the file into the window), and press Enter.
   are in the language being spoken. They are accurate and instant, which
   matters most for Thai: no waiting several times the video's length for
   transcription. Add `--whisper` to transcribe the sound anyway.
+- **Every note says when it was said.** For a link, the time is clickable and
+  opens the video at that moment, so anything unclear is one click from a
+  replay: `- Energy is conserved ([12:34](https://youtube.com/watch?v=...&t=751s))`.
+  A note that cannot be traced to the transcript gets no time rather than a
+  wrong one.
 - **Only the sound is downloaded**, not the picture, so even an hour-long
   lesson is quick to fetch.
 - `--later` saves the sound now and leaves the work for `notes catchup`, the
