@@ -387,13 +387,15 @@ into windows, each reduced to a few points, then consolidated and deduplicated.
 Administrative asides ("the exam is on Friday") are separated from the actual
 content.
 
-Recordings live in `~/.local/share/notetaker/sessions/<id>/`:
+Recordings live in `~/.local/share/notetaker/sessions/<id>/`
+(`%LOCALAPPDATA%\NoteTaker\sessions\<id>\` on Windows):
 
 | file | what it is |
 |---|---|
 | `audio.wav` | the recording, kept so you can re-run `--hq` |
 | `transcript.jsonl` | timestamped transcript, written as the class happens |
 | `notes.md` | the key ideas |
+| `video.json` | for a video: its link, chapters and any `--from` offset |
 
 ---
 
@@ -516,16 +518,20 @@ for the whole day rather than waiting after each period.
   a smaller model via `--summary-model`, cuts the wait proportionally.
 - **Recordings are never deleted.** A one-hour class keeps about 115 MB of
   audio so `--hq` re-runs stay possible. Delete old sessions yourself from
-  `~/.local/share/notetaker/sessions/` if space runs short.
+  `~/.local/share/notetaker/sessions/` (on Windows,
+  `%LOCALAPPDATA%\NoteTaker\sessions\`) if space runs short.
 - **macOS needs a loopback driver for online classes.** BlackHole or similar;
   see Install. In-person recording works with no extra setup.
-- Linux and macOS only. Windows is not supported.
+- **Windows needs Stereo Mix (or VB-CABLE) for online classes.** Many
+  laptops hide it; `notes setup-online` shows how to switch it on. In-person
+  recording works with no extra setup.
 
 ## If something goes wrong
 
 **"no 'system' source available"** — run `notes check`. On Linux your machine
 exposes no `.monitor` device; on macOS you need a loopback driver
-(`brew install blackhole-2ch`).
+(`brew install blackhole-2ch`); on Windows, `notes setup-online` switches on
+Stereo Mix.
 
 **Recording is silent** — for online classes, make sure the audio really is
 playing through the sink you selected. `notetaker devices` marks the default.
@@ -533,7 +539,8 @@ playing through the sink you selected. `notetaker devices` marks the default.
 **Not sure what is wrong** — run `notes check`. It tests every part and prints
 the exact command to fix whatever is missing.
 
-**"cannot reach Ollama"** — run `ollama serve`. Your transcript is already
+**"cannot reach Ollama"** — open the Ollama app (Mac, Windows) or run
+`ollama serve` (Linux). Your transcript is already
 saved; run `notetaker summarize <id>` once Ollama is up.
 
 **Notes look wrong** — check the transcript first with

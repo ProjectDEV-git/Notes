@@ -76,3 +76,10 @@ def test_shortcuts_pass_unknown_words_to_the_cli():
 def test_class_length_can_be_changed_on_windows(monkeypatch):
     monkeypatch.setenv("NOTES_CLASS_MINUTES", "45")
     assert shortcuts.translate(["class"])[-2:] == ["--minutes", "45"]
+
+
+def test_readme_does_not_say_windows_is_unsupported():
+    """It is supported; a stale line here sends Windows students away."""
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "Windows is not supported" not in readme
+    assert "Linux and macOS only" not in readme
