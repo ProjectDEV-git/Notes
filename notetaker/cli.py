@@ -370,7 +370,7 @@ def cmd_record(args: argparse.Namespace) -> int:
         )
     return _summarize_session(
         session, model=args.summary_model, premapped=premapped,
-        level=getattr(args, "level", None),
+        level=getattr(args, "level", None), notes_lang=args.notes_lang,
     )
 
 
@@ -383,6 +383,7 @@ def _summarize_session(
     quiet: bool = False,
     premapped: tuple[list[str], list[str], int] | None = None,
     level: str | None = None,
+    notes_lang: str | None = None,
 ) -> int:
     segments = store.load_transcript(session)
     if not segments:
@@ -424,11 +425,32 @@ def _summarize_session(
     markdown = notes.markdown
     if session.source_kind == config.SOURCE_VIDEO:
         markdown = _annotate_video_notes(session, markdown, segments)
+    target = notes_lang or config.NOTES_LANGUAGE
+    if target and target != notes.language:
+        markdown = _translated(markdown, notes.language, target, model, quiet)
     store.write_notes(session, markdown)
     echo()
     echo(markdown)
     echo(f"[green]notes saved:[/green] {session.notes_path}")
     return 0
+
+
+def _translated(markdown: str, source: str, target: str, model: str, quiet: bool) -> str:
+    """The notes in another language, or as they are if that fails.
+
+    Written and checked in the spoken language first (see translate.py);
+    a translation failure must never cost the notes themselves.
+    """
+    from . import languages, translate
+
+    if not quiet:
+        echo(f"[dim]writing the notes in {languages.get(target).name}...[/dim]")
+    try:
+        return translate.translate_notes(markdown, source, target, model=model)
+    except summarize.SummarizerError as exc:
+        echo(f"[yellow]could not translate the notes ({exc}); "
+             f"keeping them in {languages.get(source).name}[/yellow]")
+        return markdown
 
 
 def _annotate_video_notes(session: store.Session, markdown: str, segments) -> str:
@@ -478,7 +500,8 @@ def cmd_summarize(args: argparse.Namespace) -> int:
             )
         echo(f"[dim]{len(segments)} segments[/dim]")
 
-    return _summarize_session(session, model=args.model, level=getattr(args, "level", None))
+    return _summarize_session(session, model=args.model, level=getattr(args, "level", None),
+                              notes_lang=args.notes_lang)
 
 
 # --------------------------------------------------------------------------
@@ -697,7 +720,8 @@ def _import_one(
             return 0
 
     session = store.get_session(session.id) or session
-    return _summarize_session(session, model=args.summary_model, level=args.level)
+    return _summarize_session(session, model=args.summary_model, level=args.level,
+                              notes_lang=args.notes_lang)
 
 
 
@@ -833,7 +857,7 @@ def cmd_catchup(args: argparse.Namespace) -> int:
 
         if _summarize_session(
             session, model=args.summary_model, quiet=True,
-            level=getattr(args, "level", None),
+            level=getattr(args, "level", None), notes_lang=args.notes_lang,
         ) != 0:
             failed += 1
             continue
@@ -1084,6 +1108,15 @@ Start here (run from the project directory):
 # --------------------------------------------------------------------------
 # argument parsing
 # --------------------------------------------------------------------------
+def _add_notes_lang(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--notes-lang", default=config.NOTES_LANGUAGE,
+        choices=list(config.supported_languages()),
+        help="write the notes in this language, e.g. th for Thai notes from an "
+             "English lesson. Default: the language spoken",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="notetaker",
@@ -1192,6 +1225,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="who the notes are written for. Default: school",
     )
 
+    _add_notes_lang(record)
+    _add_notes_lang(video_cmd)
+
     listing = subparsers.add_parser("list", help="list past recordings")
     listing.add_argument("--limit", "-n", type=positive_int, default=20)
 
@@ -1207,6 +1243,8 @@ def build_parser() -> argparse.ArgumentParser:
     catchup.add_argument(
         "--level", default=config.NOTES_LEVEL, choices=list(config.NOTES_LEVELS),
     )
+
+    _add_notes_lang(catchup)
 
     show = subparsers.add_parser("show", help="show notes for a recording")
     show.add_argument("session", help="session id or part of the title")
@@ -1224,6 +1262,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--level", default=config.NOTES_LEVEL, choices=list(config.NOTES_LEVELS),
         help="who the notes are written for. Default: school",
     )
+
+    _add_notes_lang(summarize_cmd)
 
     export = subparsers.add_parser("export", help="write notes or transcript to a file")
     export.add_argument("session", help="session id or part of the title")

@@ -171,6 +171,15 @@ STRIP_THINK_BLOCKS = True
 NOTES_LEVEL = os.environ.get("NOTETAKER_NOTES_LEVEL", "school")
 NOTES_LEVELS = ("school", "university")
 
+# The language the notes are written in. Empty = the language spoken in the
+# class. Set it to read every class in one language, e.g. Thai notes from
+# English lessons. Override with --notes-lang or NOTETAKER_NOTES_LANGUAGE.
+NOTES_LANGUAGE = os.environ.get("NOTETAKER_NOTES_LANGUAGE") or None
+# Lines per translation call: enough to keep context, small enough that
+# llama3.2:3b answers every line within the token budget.
+TRANSLATE_BATCH_LINES = 12
+TRANSLATE_MAX_TOKENS = 900
+
 
 def prompts_for(language: str | None, level: str | None = None) -> dict[str, str]:
     """Return the map and reduce prompts for a language and reading level.

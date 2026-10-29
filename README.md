@@ -223,6 +223,22 @@ Adding a language? A pack can carry its own school prompts and headings
 simply uses its normal ones, so nothing you have already written needs
 changing. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
 
+### Notes in another language
+
+Learning from an English video but want Thai notes? Ask for them:
+
+```bash
+notes video https://youtu.be/... --notes-lang th
+notes record --notes-lang th              # works for any class
+export NOTETAKER_NOTES_LANGUAGE=th        # or make it the default
+```
+
+The menu asks too (Enter keeps the language of the lesson). The notes are
+written and checked against the transcript in the language spoken, then
+translated as the last step, so translating cannot add points nobody said.
+Numbers, units and formulas must come through unchanged: a line where they do
+not is left in the original language rather than risk a wrong figure.
+
 ## Languages
 
 Transcription already works for ~100 languages with no setup, because that is

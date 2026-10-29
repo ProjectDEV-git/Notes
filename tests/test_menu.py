@@ -323,8 +323,8 @@ def test_a_nonsense_level_answer_falls_back_safely():
 
 def test_more_options_passes_the_chosen_level_through():
     """Otherwise the only way to change it is the command line."""
-    # language, level, subject, class length, online?
-    with _tty(), _no_pending(), _answers("8", "1", "2", "1", "1", "n"), \
+    # language, level, notes language, subject, class length, online?
+    with _tty(), _no_pending(), _answers("8", "1", "2", "", "1", "1", "n"), \
             patch("notetaker.cli.main", return_value=0) as cli:
         menu.main()
     argv = cli.call_args[0][0]

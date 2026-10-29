@@ -318,6 +318,27 @@ def pick_class_length() -> int:
     return config.DEFAULT_CLASS_MINUTES
 
 
+def pick_notes_language() -> str | None:
+    """Which language to write the notes in. None = the language spoken.
+
+    Lets a Thai student get Thai notes from an English lesson without
+    knowing that --notes-lang exists.
+    """
+    from . import languages
+
+    codes = list(config.supported_languages())
+    out("\n[bold]What language should the notes be in?[/bold]")
+    out("  [bold]1[/bold]. The same language as the lesson [dim](recommended)[/dim]")
+    for index, code in enumerate(codes, start=2):
+        out(f"  [bold]{index}[/bold]. {languages.get(code).name}")
+    answer = ask("\nNumber (Enter = same as the lesson): ", "1")
+    try:
+        number = int(answer)
+    except ValueError:
+        return None
+    return codes[number - 2] if 2 <= number < len(codes) + 2 else None
+
+
 def pick_level() -> str:
     """Who the notes are written for. Only asked under 'more options'.
 
@@ -389,6 +410,7 @@ def _record(source: str) -> int:
 def _record_with_options() -> int:
     language = pick_language()
     level = pick_level()
+    notes_lang = pick_notes_language()
     title = pick_subject()
     minutes = pick_class_length()
     online = confirm("\nIs this an online class (Zoom/Teams/YouTube)?", default=False)
@@ -399,6 +421,8 @@ def _record_with_options() -> int:
         "--lang", language,
         "--level", level,
     ]
+    if notes_lang:
+        argv += ["--notes-lang", notes_lang]
     if title:
         argv += ["--title", title]
     if minutes:
@@ -480,7 +504,8 @@ def _from_video() -> int:
     if not source:
         out("[yellow]Nothing was pasted. Nothing was changed.[/yellow]")
         return 0
-    return _cli("video", source)
+    notes_lang = pick_notes_language()
+    return _cli("video", source, *(["--notes-lang", notes_lang] if notes_lang else []))
 
 
 def options() -> list[Option]:
