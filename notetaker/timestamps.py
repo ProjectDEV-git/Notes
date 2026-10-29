@@ -71,14 +71,17 @@ def add_timestamps(
     segments: list[Segment],
     link: Callable[[float], str] | None = None,
     offset: float = 0.0,
+    chapters: list[dict] | None = None,
 ) -> str:
     """Append '(12:34)' to each bullet, as a link when `link` is given.
 
     `offset` is added to transcript times: a trimmed video's transcript starts
-    at zero, but the link must point into the full video.
+    at zero, but the link must point into the full video. With `chapters`,
+    the key ideas are also grouped under the video's own chapter titles.
     """
     indexed = [_words(s.text) for s in segments]
     out: list[str] = []
+    times: dict[int, float] = {}  # output line -> time in the full video
     for line in markdown.splitlines():
         match = _BULLET.match(line)
         if not match or _HAS_TIME.search(line):
@@ -91,5 +94,68 @@ def add_timestamps(
         at = found + offset
         label = format_time(at)
         stamp = f"[{label}]({link(max(at - LEAD_IN_SECONDS, 0))})" if link else label
+        times[len(out)] = at
         out.append(f"{line.rstrip()} ({stamp})")
+    if chapters:
+        out = group_by_chapter(out, times, chapters)
     return "\n".join(out) + ("\n" if markdown.endswith("\n") else "")
+
+
+def clean_chapters(raw: object) -> list[dict]:
+    """yt-dlp's chapter list, reduced to what is needed and sanity-checked."""
+    chapters = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        try:
+            # yt-dlp says start_time; video.json keeps the cleaned "start".
+            start = float(item.get("start_time", item.get("start")))
+        except (TypeError, ValueError):
+            continue
+        if title:
+            chapters.append({"start": start, "title": title})
+    chapters.sort(key=lambda c: c["start"])
+    return chapters
+
+
+def group_by_chapter(lines: list[str], times: dict[int, float], chapters: list[dict]) -> list[str]:
+    """Put the key ideas under '### <chapter>' headings, in chapter order.
+
+    Only the first section (the key ideas) is grouped: homework and new words
+    read better as one list. Bullets with no time stay at the top. Nothing is
+    changed when the section holds anything but bullets, or when every bullet
+    lands in one chapter, since a lone heading adds nothing.
+    """
+    chapters = clean_chapters(chapters)
+    if len(chapters) < 2:
+        return lines
+    headings = [i for i, line in enumerate(lines) if line.startswith("## ")]
+    if not headings:
+        return lines
+    first = headings[0]
+    end = headings[1] if len(headings) > 1 else len(lines)
+    body = range(first + 1, end)
+    if any(line.strip() and not _BULLET.match(line) for line in (lines[i] for i in body)):
+        return lines
+
+    def chapter_of(at: float) -> int:
+        index = 0
+        for number, chapter in enumerate(chapters):
+            if chapter["start"] <= at + 0.5:
+                index = number
+        return index
+
+    untimed = [lines[i] for i in body if lines[i].strip() and i not in times]
+    grouped: dict[int, list[str]] = {}
+    for i in body:
+        if i in times:
+            grouped.setdefault(chapter_of(times[i]), []).append(lines[i])
+    if len(grouped) < 2:
+        return lines
+
+    section = [lines[first], *untimed]
+    for number in sorted(grouped):
+        section += ["", f"### {chapters[number]['title']}", *grouped[number]]
+    tail = lines[end:]
+    return lines[:first] + section + ([""] if tail else []) + tail

@@ -445,6 +445,7 @@ def _annotate_video_notes(session: store.Session, markdown: str, segments) -> st
             markdown, segments,
             link=video.link_for(meta),
             offset=float(meta.get("offset") or 0),
+            chapters=meta.get("chapters"),
         )
     except Exception:
         return markdown
@@ -554,7 +555,12 @@ def cmd_video(args: argparse.Namespace) -> int:
         return 0
 
     session = store.create_session(title, config.SOURCE_VIDEO, origin)
-    video.save_meta(session.directory, url=None if is_file else origin, offset=0)
+    video.save_meta(
+        session.directory,
+        url=None if is_file else origin,
+        offset=0,
+        chapters=info.chapters if info else [],
+    )
     download_dir = session.directory / "download"
     captions: list = []
     use_captions = bool(info and info.caption_key and not args.whisper)

@@ -23,13 +23,14 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 from . import config
 from .asr import Segment
+from .timestamps import clean_chapters
 
 APP_DIR = Path(__file__).resolve().parent.parent
 REQUIREMENTS = APP_DIR / "requirements-video.txt"
@@ -54,6 +55,7 @@ class VideoInfo:
     duration: float  # seconds; 0 when the site does not say
     language: str | None  # the spoken language, when the site knows it
     caption_key: str | None  # creator-written subtitles in that language
+    chapters: list[dict] = field(default_factory=list)  # {start, title}, full-video time
 
 
 # --------------------------------------------------------------------------
@@ -328,6 +330,7 @@ def parse_info(data: dict, language: str | None = None) -> VideoInfo:
         duration=float(data.get("duration") or 0),
         language=spoken,
         caption_key=pick_caption(data.get("subtitles") or {}, spoken),
+        chapters=clean_chapters(data.get("chapters")),
     )
 
 

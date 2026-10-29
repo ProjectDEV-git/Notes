@@ -143,3 +143,83 @@ def test_recorded_classes_are_left_as_they_were(db):
 def test_broken_video_info_never_costs_the_notes(db):
     session_notes = _summarized(config.SOURCE_VIDEO, None)
     assert "(0:40)" in session_notes  # no link without an address, times still help
+
+
+# ---------------------------------------------------------------- chapters
+CHAPTERS = [
+    {"start_time": 0.0, "end_time": 44.0, "title": "Lifting the weight"},
+    {"start_time": 44.0, "end_time": 84.0, "title": "Wrecking balls"},
+    {"start_time": 84.0, "end_time": 210.0, "title": "Betting my life on it"},
+]
+
+CHAPTER_NOTES = """# Physics
+
+## Key ideas
+- A wrecking ball demolishes buildings by converting potential energy to kinetic energy
+- Lifting a 15 kilogram object one meter increases its potential energy
+- Photosynthesis happens in the chloroplasts
+- A released pendulum bob can never come back higher than where it started
+
+## Homework & reminders
+- 150 joules is enough energy to kill a person
+"""
+
+
+def test_key_ideas_are_grouped_under_the_videos_chapters():
+    out = timestamps.add_timestamps(CHAPTER_NOTES, LECTURE, chapters=CHAPTERS).splitlines()
+    assert out[2] == "## Key ideas"
+    assert out[3] == "- Photosynthesis happens in the chloroplasts", "untimed notes stay on top"
+    assert out[5] == "### Lifting the weight" and "15 kilogram" in out[6]
+    assert out[8] == "### Wrecking balls" and "wrecking ball" in out[9]
+    assert out[11] == "### Betting my life on it" and "pendulum" in out[12]
+    assert out[13] == "" and out[14] == "## Homework & reminders"
+    assert out[15].startswith("- 150 joules"), "only the key ideas are grouped"
+
+
+def test_saved_chapters_work_as_well_as_fresh_ones():
+    saved = timestamps.clean_chapters(CHAPTERS)
+    assert saved[1] == {"start": 44.0, "title": "Wrecking balls"}
+    assert (timestamps.add_timestamps(CHAPTER_NOTES, LECTURE, chapters=saved)
+            == timestamps.add_timestamps(CHAPTER_NOTES, LECTURE, chapters=CHAPTERS))
+
+
+def test_one_chapter_or_none_changes_nothing_but_the_times():
+    plain = timestamps.add_timestamps(CHAPTER_NOTES, LECTURE)
+    assert "###" not in plain
+    assert timestamps.add_timestamps(CHAPTER_NOTES, LECTURE, chapters=CHAPTERS[:1]) == plain
+    assert timestamps.add_timestamps(CHAPTER_NOTES, LECTURE, chapters=[]) == plain
+
+
+def test_a_trimmed_video_uses_full_video_chapter_times():
+    """Transcript 0:00 is 1:24 into the video, inside the last chapter."""
+    out = timestamps.add_timestamps(CHAPTER_NOTES, LECTURE, chapters=CHAPTERS, offset=84)
+    assert "### Lifting the weight" not in out
+
+
+def test_a_section_with_more_than_bullets_is_left_alone():
+    notes = CHAPTER_NOTES.replace("## Key ideas\n", "## Key ideas\nSome intro text.\n")
+    assert "###" not in timestamps.add_timestamps(notes, LECTURE, chapters=CHAPTERS)
+
+
+def test_odd_chapter_data_is_ignored():
+    assert timestamps.clean_chapters("nonsense") == []
+    assert timestamps.clean_chapters([{"title": "x"}, {"start_time": "a", "title": "y"},
+                                      {"start_time": 5, "title": ""}, 7]) == []
+
+
+def test_chapters_are_read_from_the_video_info():
+    info = video.parse_info({"chapters": [{"start_time": 60, "title": "B"},
+                                          {"start_time": 0, "title": "A"}]})
+    assert [c["title"] for c in info.chapters] == ["A", "B"]
+
+
+def test_video_notes_use_saved_chapters(db):
+    session = store.create_session("Physics", config.SOURCE_VIDEO)
+    store.write_transcript(session, LECTURE)
+    video.save_meta(session.directory, url="https://youtu.be/abc", offset=0,
+                    chapters=timestamps.clean_chapters(CHAPTERS))
+    fake = summarize.Notes(markdown=CHAPTER_NOTES)
+    with patch.object(summarize, "ollama_available", return_value=True), \
+            patch.object(summarize, "summarize_segments", return_value=fake):
+        assert cli._summarize_session(session, model="stub") == 0
+    assert "### Wrecking balls" in session.notes_path.read_text()

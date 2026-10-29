@@ -139,6 +139,8 @@ the file into the window), and press Enter.
   replay: `- Energy is conserved ([12:34](https://youtube.com/watch?v=...&t=751s))`.
   A note that cannot be traced to the transcript gets no time rather than a
   wrong one.
+- **Videos with chapters get them as headings.** The key ideas are grouped
+  under the video's own chapter titles, in order.
 - **Only the sound is downloaded**, not the picture, so even an hour-long
   lesson is quick to fetch.
 - `--later` saves the sound now and leaves the work for `notes catchup`, the
