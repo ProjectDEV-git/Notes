@@ -26,9 +26,11 @@ for _words, _argv in [
     (("catchup", "writeup", "finish", "homework"), ["catchup"]),
     (("online", "zoom", "teams", "system", "meet", "youtube"), ["record", "--source", "system", "--live-notes"]),
     (("all", "ls", "list"), ["list"]),
+    (("show", "open"), ["show"]),
     (("check", "test", "doctor", "setup"), ["check", "--listen"]),
     (("update", "upgrade"), ["update"]),
     (("menu",), ["menu"]),
+    (("video", "watch", "link", "file", "import"), ["video"]),
 ]:
     for _word in _words:
         VERBS[_word] = _argv
@@ -41,6 +43,7 @@ notes later        record the sound only; write the notes after school
 notes catchup      write notes for every class that does not have them yet
 notes now          record until you press Ctrl-C (a long lecture)
 notes online       record an online class (Zoom/Teams/YouTube)
+notes video LINK   make notes from a YouTube link or a video file
 notes setup-online one-time setup so online classes can be recorded
 notes last         show the notes from your last class
 notes all          list every class
@@ -61,8 +64,21 @@ def translate(argv: list[str]) -> list[str] | None:
 
         sessions = store.list_sessions(limit=1)
         return ["show", sessions[0].id] if sessions else ["list"]
+    from .video import looks_like_url
+
+    # `notes https://youtu.be/...`: a pasted link needs no verb.
+    if looks_like_url(word):
+        return ["video", *argv]
+    # `notes youtube` alone still records whatever is playing; given a link,
+    # it makes notes from that video instead.
+    if word == "youtube" and rest and not rest[0].startswith("-"):
+        return ["video", *rest]
     if word in VERBS:
         return [a.replace("{minutes}", _class_minutes()) for a in VERBS[word]] + rest
+    # `notes lesson.mp4`: a dragged-in file. Checked after the verbs, as in
+    # the bash launcher, so a file called "class" cannot hijack `notes class`.
+    if not word.startswith("-") and Path(word).is_file():
+        return ["video", *argv]
     return argv
 
 

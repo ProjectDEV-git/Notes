@@ -1,2 +1,5 @@
 -r requirements.txt
 pytest>=8.0
+# Lets the video tests run yt-dlp for real against a local web server.
+# Deno is left out: those tests never touch YouTube.
+yt-dlp>=2025.11.12

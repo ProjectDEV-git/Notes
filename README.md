@@ -11,6 +11,10 @@ Works for both kinds of class:
 - **In person** — captures your microphone
 - **Online** (Zoom, Teams, YouTube) — captures your system audio
 
+And for lessons that are already over:
+
+- **From a video** — paste a YouTube link, or give it a video or audio file
+
 Handles **English and Thai** out of the box, and a Thai class produces Thai
 notes. [Adding another language](docs/LANGUAGES.md) takes about a minute:
 
@@ -58,6 +62,7 @@ notes            # opens a menu: pick a number, press Enter
   7. Record now, write notes later — saves battery in class
   8. Record with more options — language, length, reading level
   9. Check that everything works — microphone, notes writer
+  10. Make notes from a video — YouTube link or a video file
 ```
 
 It asks which subject, and how long the class is. Enter is a valid answer to
@@ -69,6 +74,7 @@ notes later      # record the sound only; write the notes after school
 notes catchup    # write notes for every class that does not have them yet
 notes now        # record until you press Ctrl-C (a long lecture)
 notes online     # record an online class (Zoom/Teams/YouTube)
+notes video LINK # make notes from a YouTube link or a video file
 notes last       # show the notes from your last class
 notes all        # list every class
 notes check      # confirm your microphone and notes writer work
@@ -106,6 +112,42 @@ here rather than lost: a transcript that was cut short is redone from the full
 recording, so you get the whole class and not just the start. The menu tells
 you when classes are waiting.
 
+### Videos and YouTube
+
+Missed the class, or the teacher posted it online? Paste the link:
+
+```bash
+notes https://www.youtube.com/watch?v=...     # a link is enough
+notes video ~/Downloads/week4-physics.mp4     # or a file you already have
+```
+
+Or pick **10. Make notes from a video** in the menu, paste the link (or drag
+the file into the window), and press Enter.
+
+- **Most video sites work**, not just YouTube: Vimeo, Facebook, school
+  platforms, and over a thousand others, via
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp). Video and audio **files** work
+  too: `.mp4`, `.mov`, `.mkv`, `.mp3`, `.m4a`, and so on.
+- **The first link downloads one extra helper** (about 60 MB) and then never
+  again. Files do not need it.
+- **Subtitles written by the creator are used as the transcript** when they
+  are in the language being spoken. They are accurate and instant, which
+  matters most for Thai: no waiting several times the video's length for
+  transcription. Add `--whisper` to transcribe the sound anyway.
+- **Only the sound is downloaded**, not the picture, so even an hour-long
+  lesson is quick to fetch.
+- `--later` saves the sound now and leaves the work for `notes catchup`, the
+  same as a recorded class. Each video becomes an ordinary class in
+  `notes all`, so `show`, `export` and `summarize --hq` all work on it.
+- Giving it the **same link twice** shows the notes you already have instead
+  of doing it all again. Add `--again` to start over.
+
+When a site changes how it works (YouTube does, often), NoteTaker updates the
+helper by itself and tries again. Private, members-only and age-restricted
+videos cannot be downloaded; download those another way and give NoteTaker
+the file. For a stream that is **live right now**, record it with
+`notes online` while it plays.
+
 Anything else is passed to the full CLI:
 
 ```bash
@@ -130,6 +172,9 @@ notetaker record [--source mic|system] [--title T] [--live-notes] [--lang auto|e
                [--later]               # record sound only, write notes later
                [--level school|university]
 notetaker catchup [--limit N]          # write up every class still missing notes
+notetaker video <link-or-file> [--title T] [--lang L] [--later] [--hq]
+               [--whisper]             # ignore the video's own subtitles
+               [--again]               # redo a video you already have
 notetaker list                         # past recordings
 notetaker show <id> [--transcript]
 notetaker summarize <id> [--rerun] [--hq] [--level school|university]

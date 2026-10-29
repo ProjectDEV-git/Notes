@@ -31,6 +31,22 @@ def ensure_dirs() -> None:
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def caller_dir() -> Path:
+    """The folder the student ran `notes` from.
+
+    The Mac/Linux launcher changes into the app folder before starting Python,
+    so the current directory is not where they were. It passes the original
+    one along in NOTES_CALLER_DIR.
+    """
+    return Path(os.environ.get("NOTES_CALLER_DIR") or Path.cwd())
+
+
+def user_path(value: str | os.PathLike[str]) -> Path:
+    """A path the student typed, resolved against where they typed it."""
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else caller_dir() / path
+
+
 # --------------------------------------------------------------------------
 # Audio capture
 # --------------------------------------------------------------------------
@@ -42,6 +58,7 @@ OVERLAP_SECONDS = 2  # nominal seam allowance; dedupe happens at text level in a
 # Friendly aliases so users never type a raw PulseAudio device name.
 SOURCE_MIC = "mic"  # in-person lecture
 SOURCE_SYSTEM = "system"  # online lecture (Zoom/Teams/YouTube) via .monitor source
+SOURCE_VIDEO = "video"  # a YouTube link or a video/audio file, not recorded live
 
 FFMPEG_BIN = "ffmpeg"
 FFPROBE_BIN = "ffprobe"

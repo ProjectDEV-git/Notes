@@ -4,6 +4,7 @@
     notetaker record [--source mic|system] [--title T] [--live-notes]
     notetaker list
     notetaker show <id> [--transcript]
+    notetaker video <link-or-file> [--title T] [--lang L] [--later] [--hq]
     notetaker summarize <id> [--rerun] [--hq]
     notetaker export <id> [--md|--txt] [-o FILE]
 
@@ -458,6 +459,164 @@ def cmd_summarize(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# video
+# --------------------------------------------------------------------------
+def _previous_import(origin: str) -> store.Session | None:
+    for session in store.list_sessions():
+        if session.source_kind == config.SOURCE_VIDEO and session.source_name == origin:
+            return session
+    return None
+
+
+def _transcription_progress():
+    """Print a line every 10% so an hour of transcribing never looks stuck."""
+    shown = {"step": 0}
+
+    def report(done: float, total: float) -> None:
+        if total <= 0:
+            return
+        step = min(int(done / total * 10), 10)
+        if step > shown["step"]:
+            shown["step"] = step
+            echo(f"[dim]  transcribed {step * 10}% "
+                 f"({format_duration(done)} of {format_duration(total)})[/dim]")
+
+    return report
+
+
+def cmd_video(args: argparse.Namespace) -> int:
+    """Make notes from a YouTube (or other) link, or a video/audio file."""
+    from . import video
+    from .audio import wav_duration
+
+    config.ensure_dirs()
+    pasted = video.clean_pasted(args.source)
+    if not pasted:
+        return fail("give a video link or a file, for example:  notes video https://youtu.be/...")
+
+    path = config.user_path(pasted)
+    is_file = path.is_file()
+    if not is_file and not video.looks_like_url(pasted):
+        return fail(
+            f"{pasted!r} is not a link, and there is no file with that name.\n"
+            "Paste the whole link (it starts with https://), or the path to a video file."
+        )
+    if shutil.which(config.FFMPEG_BIN) is None:
+        return fail("ffmpeg is not installed, so the sound cannot be read. Run:  notes check")
+
+    language = None if args.lang in (None, "auto") else args.lang
+    info = None
+    try:
+        if is_file:
+            origin = str(path.resolve())
+            title = args.title or video.title_from_filename(path)
+        else:
+            url = video.normalize_url(pasted)
+            if not video.have_downloader():
+                video.install_downloader(echo)
+            echo("[dim]looking up the video...[/dim]")
+            info = video.fetch_info(url, echo, language=language)
+            origin = info.url
+            title = args.title or info.title
+    except video.VideoError as exc:
+        return fail(str(exc))
+
+    earlier = None if args.again else _previous_import(origin)
+    if earlier is not None:
+        echo(
+            f"[yellow]You already have this video:[/yellow] {earlier.title} "
+            f"[dim]({earlier.id})[/dim]\n"
+            f"[dim]Read its notes with:  notes show {earlier.id}\n"
+            "Make them again from scratch with --again.[/dim]"
+        )
+        return 0
+
+    session = store.create_session(title, config.SOURCE_VIDEO, origin)
+    download_dir = session.directory / "download"
+    captions: list = []
+    use_captions = bool(info and info.caption_key and not args.whisper)
+    try:
+        if is_file:
+            echo(f"[dim]reading the sound from {path.name}...[/dim]")
+            video.to_wav(path, session.audio_path)
+        else:
+            echo(f"[bold]{title}[/bold]" + (
+                f" [dim]({format_duration(info.duration)})[/dim]" if info.duration else ""))
+            media, vtt = video.download(
+                url, download_dir, echo,
+                caption_key=info.caption_key if use_captions else None,
+            )
+            echo("[dim]preparing the sound...[/dim]")
+            video.to_wav(media, session.audio_path)
+            if vtt is not None:
+                captions = video.parse_vtt(
+                    vtt.read_text(encoding="utf-8", errors="replace"),
+                    info.language or "en",
+                )
+    except video.VideoError as exc:
+        # Nothing usable arrived, so do not leave an empty class in the list.
+        store.delete_session(session.id)
+        return fail(str(exc))
+    except KeyboardInterrupt:
+        store.delete_session(session.id)
+        raise
+    finally:
+        shutil.rmtree(download_dir, ignore_errors=True)
+
+    try:
+        duration = wav_duration(session.audio_path)
+    except Exception:
+        duration = info.duration if info else 0.0
+
+    if captions:
+        store.write_transcript(session, captions)
+        store.finish_session(session.id, duration=duration, language=info.language)
+        echo(
+            f"[green]used the video's own subtitles[/green] "
+            f"[dim]({len(captions)} lines), so nothing needs transcribing. "
+            "Prefer Whisper's transcript? Add --whisper.[/dim]"
+        )
+    else:
+        store.finish_session(session.id, duration=duration, language=language)
+        if args.later:
+            echo(
+                f"[green]sound saved[/green] for {title} "
+                f"[dim]({format_duration(duration)})[/dim]. Nothing has been transcribed yet.\n"
+                "[dim]Write the notes when you have time:  notes catchup[/dim]"
+            )
+            return 0
+
+        model = config.ASR_MODEL_HQ if args.hq else args.model
+        echo(
+            f"[dim]transcribing {format_duration(duration)} of sound with {model}. "
+            "On a laptop this can take about as long as the video.[/dim]"
+        )
+        try:
+            transcriber = Transcriber(model, language=language)
+            segments = transcriber.transcribe_file(
+                session.audio_path, progress=_transcription_progress()
+            )
+            store.write_transcript(session, segments)
+        except KeyboardInterrupt:
+            echo("\n[yellow]stopped.[/yellow] The sound is saved, so nothing is lost.\n"
+                 "[dim]Finish it later with:  notes catchup[/dim]")
+            return 130
+        except Exception as exc:
+            return fail(
+                f"could not transcribe: {exc}\n"
+                "The sound is saved. Try again later with:  notes catchup"
+            )
+        store.finish_session(session.id, duration=duration, language=transcriber.language)
+        if not segments:
+            echo("[yellow]no speech found in this video, so there is nothing to "
+                 "write notes from[/yellow]")
+            return 0
+
+    session = store.get_session(session.id) or session
+    return _summarize_session(session, model=args.summary_model, level=args.level)
+
+
+# --------------------------------------------------------------------------
 # list / show / export
 # --------------------------------------------------------------------------
 def cmd_catchup(args: argparse.Namespace) -> int:
@@ -628,7 +787,12 @@ def cmd_export(args: argparse.Namespace) -> int:
         content = session.notes_path.read_text(encoding="utf-8")
         suffix = ".md"
 
-    destination = Path(args.output) if args.output else Path.cwd() / f"{session.id}{suffix}"
+    # Resolved against where the student ran `notes`, not the app folder the
+    # launcher runs from: a file there is hard to find and blocks updates.
+    destination = (
+        config.user_path(args.output) if args.output
+        else config.caller_dir() / f"{session.id}{suffix}"
+    )
     destination.write_text(content, encoding="utf-8")
     echo(f"[green]exported:[/green] {destination}")
     return 0
@@ -772,6 +936,10 @@ Start here (run from the project directory):
   .venv/bin/python -m notetaker.cli catchup
       Write notes for every recording that does not have them yet.
 
+  .venv/bin/python -m notetaker.cli video https://www.youtube.com/watch?v=...
+  .venv/bin/python -m notetaker.cli video ~/Downloads/lesson.mp4
+      Make notes from a YouTube (or other) link, or a video/audio file.
+
   .venv/bin/python -m notetaker.cli list
   .venv/bin/python -m notetaker.cli show Physics
       See past recordings, and read the notes for one. `show Physics`
@@ -842,6 +1010,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record.add_argument("--plain", action="store_true", help="disable the live display")
 
+    video_cmd = subparsers.add_parser(
+        "video",
+        help="make notes from a YouTube (or other) link, or a video/audio file",
+    )
+    video_cmd.add_argument(
+        "source", help="a link (YouTube, Vimeo, ...) or a video/audio file on this computer"
+    )
+    video_cmd.add_argument("--title", "-t", default=None,
+                           help="what to call it. Default: the video's own title")
+    video_cmd.add_argument(
+        "--lang", default="auto",
+        choices=["auto", *config.supported_languages()],
+        help="language spoken in the video. Default: autodetect",
+    )
+    video_cmd.add_argument("--model", default=config.ASR_MODEL, help="whisper model")
+    video_cmd.add_argument(
+        "--hq", action="store_true",
+        help=f"transcribe with {config.ASR_MODEL_HQ} (slower, more accurate; better for Thai)",
+    )
+    video_cmd.add_argument(
+        "--whisper", action="store_true",
+        help="transcribe the sound even when the video has its own subtitles",
+    )
+    video_cmd.add_argument(
+        "--later", action="store_true",
+        help="only download the sound now; write the notes later with 'notes catchup'",
+    )
+    video_cmd.add_argument(
+        "--again", action="store_true",
+        help="make a new copy even if this video was done before",
+    )
+    video_cmd.add_argument("--summary-model", default=config.SUMMARY_MODEL, help="Ollama model")
+    video_cmd.add_argument(
+        "--level", default=config.NOTES_LEVEL, choices=list(config.NOTES_LEVELS),
+        help="who the notes are written for. Default: school",
+    )
+
     listing = subparsers.add_parser("list", help="list past recordings")
     listing.add_argument("--limit", "-n", type=positive_int, default=20)
 
@@ -907,6 +1112,7 @@ COMMANDS = {
     "update": cmd_update,
     "record": cmd_record,
     "catchup": cmd_catchup,
+    "video": cmd_video,
     "list": cmd_list,
     "show": cmd_show,
     "summarize": cmd_summarize,
