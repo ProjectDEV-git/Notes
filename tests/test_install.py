@@ -55,7 +55,7 @@ def _app_copy(app: Path) -> Path:
     so the installer skips pip and the tests never touch the network.
     """
     (app / "scripts").mkdir(parents=True)
-    for name in ("install.sh", "requirements.txt", "scripts/notes"):
+    for name in ("install.sh", "requirements.txt", "requirements-video.txt", "scripts/notes"):
         shutil.copy2(REPO / name, app / name)
     venv_bin = app / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
@@ -556,3 +556,40 @@ def test_double_click_installer_runs_install_sh():
     assert command.exists() and os.access(command, os.X_OK)
     assert "install.sh" in command.read_text()
     assert subprocess.run(["bash", "-n", str(command)]).returncode == 0
+
+
+# ------------------------------------------------------------ video links
+def _no_video_helper(sandbox, pip_exit=0):
+    """A venv that has everything except yt-dlp; pip records what it is asked."""
+    venv_bin = _app(sandbox) / ".venv" / "bin"
+    log = venv_bin.parent / "pip.log"
+    _stub(venv_bin, "python", 'case "$*" in *yt_dlp*) exit 1 ;; esac; exit 0')
+    _stub(venv_bin, "pip", f'echo "$*" >> "{log}"; exit {pip_exit}')
+    return log
+
+
+def test_video_links_are_offered_during_setup(sandbox):
+    """So the first YouTube link is not a 60 MB wait as a lesson starts."""
+    log = _no_video_helper(sandbox)
+    result = run_installer(sandbox, "--yes")
+    assert "requirements-video.txt" in log.read_text()
+    assert "video links (YouTube) ready" in result.stdout
+
+
+def test_no_install_does_not_fetch_the_video_helper(sandbox):
+    log = _no_video_helper(sandbox)
+    result = run_installer(sandbox, "--no-install")
+    assert not log.exists() or "requirements-video" not in log.read_text()
+    assert "first time you use one" in result.stdout
+
+
+def test_a_failed_video_helper_does_not_stop_the_install(sandbox):
+    _no_video_helper(sandbox, pip_exit=1)
+    result = run_installer(sandbox, "--yes")
+    assert "try again the first time you use a link" in result.stdout
+    assert "The 'notes' command" in result.stdout
+
+
+def test_windows_installer_offers_video_links_too():
+    text = (REPO / "install.ps1").read_text()
+    assert "requirements-video.txt" in text and "import yt_dlp" in text

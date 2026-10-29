@@ -132,8 +132,9 @@ the file into the window), and press Enter.
   platforms, and over a thousand others, via
   [yt-dlp](https://github.com/yt-dlp/yt-dlp). Video and audio **files** work
   too: `.mp4`, `.mov`, `.mkv`, `.mp3`, `.m4a`, and so on.
-- **The first link downloads one extra helper** (about 60 MB) and then never
-  again. Files do not need it.
+- **Links need one extra helper** (about 60 MB). The installer offers it, so
+  it is ready before your first lesson; if you skipped it, it downloads the
+  first time you paste a link. Files do not need it.
 - **Subtitles written by the creator are used as the transcript** when they
   are in the language being spoken. They are accurate and instant, which
   matters most for Thai: no waiting several times the video's length for

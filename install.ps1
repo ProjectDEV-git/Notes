@@ -171,6 +171,24 @@ if ($LASTEXITCODE -eq 0) {
     Ok "Python dependencies ready"
 }
 
+# Video links (YouTube and other sites) need one more helper. NoteTaker
+# fetches it the first time a link is used, but that is a bad moment: the
+# lesson is about to start. Offering it here means it is already there.
+& $venvPython -c "import yt_dlp" 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Ok "video links (YouTube) ready"
+} elseif (Confirm-Step "Set up YouTube and video links now? (about 60 MB; otherwise it downloads the first time you paste a link)") {
+    Say "  installing the video helper..."
+    & $venvPython -m pip install -q -r (Join-Path $AppDir "requirements-video.txt")
+    if ($LASTEXITCODE -eq 0) {
+        Ok "video links (YouTube) ready"
+    } else {
+        Warn "the video helper did not install; NoteTaker will try again the first time you use a link"
+    }
+} else {
+    Say "  skipped: video links will set themselves up the first time you use one"
+}
+
 # --------------------------------------------------------------------------
 # Ollama and the notes model
 # --------------------------------------------------------------------------
