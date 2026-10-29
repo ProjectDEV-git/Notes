@@ -148,6 +148,9 @@ the file into the window), and press Enter.
   `notes all`, so `show`, `export` and `summarize --hq` all work on it.
 - Giving it the **same link twice** shows the notes you already have instead
   of doing it all again. Add `--again` to start over.
+- **Skip the intro or the adverts** with `--from 2:30` and `--to 45:00`. Only
+  that part is transcribed, and the timestamps in the notes still match the
+  full video, so the links land in the right place.
 - **A playlist link does the whole course**, one class per video. `--limit 5`
   does only the first five. If it stops part-way, run the same command again:
   finished videos are skipped. For a long playlist, `--later` downloads
@@ -187,6 +190,7 @@ notetaker video <link-or-file> [--title T] [--lang L] [--later] [--hq]
                [--whisper]             # ignore the video's own subtitles
                [--again]               # redo a video you already have
                [--limit N]             # for a playlist: only the first N videos
+               [--from 2:30] [--to 45:00]  # only that part of the video
 notetaker list                         # past recordings
 notetaker show <id> [--transcript]
 notetaker summarize <id> [--rerun] [--hq] [--level school|university]

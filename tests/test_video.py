@@ -738,3 +738,75 @@ def test_a_real_playlist_downloads_every_video_and_resumes(db, local_site, capsy
     assert cli.main(["video", url, "--later"]) == 0
     assert len(store.list_sessions()) == 2, "finished videos are skipped on a re-run"
     assert "already done" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ trimming
+@pytest.mark.parametrize("text, seconds", [("90", 90), ("1:30", 90), ("01:02:03", 3723), ("0:05", 5)])
+def test_times_are_read_like_a_video_player(text, seconds):
+    assert video.parse_time(text) == seconds
+
+
+@pytest.mark.parametrize("text", ["", "1:x", "-5", "1:2:3:4", "2.5"])
+def test_nonsense_times_are_refused(text):
+    with pytest.raises(ValueError):
+        video.parse_time(text)
+
+
+def test_from_must_come_before_to(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["video", "x.mp4", "--from", "5:00", "--to", "2:00"])
+    assert "--to must be later than --from" in capsys.readouterr().err
+
+
+def test_subtitles_are_trimmed_and_shifted():
+    subs = [Segment(0, 5, "intro", "en", 0), Segment(8, 12, "lesson", "en", 0),
+            Segment(19, 25, "end", "en", 0), Segment(30, 32, "outro", "en", 0)]
+    kept = video.trim_captions(subs, 10, 20)
+    assert [(s.start, s.end, s.text) for s in kept] == [(0, 2, "lesson"), (9, 10, "end")]
+    assert video.trim_captions(subs, 0, None) == subs
+
+
+@needs_ffmpeg
+def test_only_the_chosen_part_of_a_file_is_kept(db, lesson_mp4):
+    assert cli.main(["video", str(lesson_mp4), "--from", "0:10", "--to", "0:20", "--later"]) == 0
+    [session] = store.list_sessions()
+    assert session.duration == pytest.approx(10, abs=0.5)
+    assert session.title == "week 4 energy (0:10–0:20)"
+    assert video.load_meta(session.directory)["offset"] == 10
+
+
+@needs_ffmpeg
+def test_a_start_past_the_end_is_explained(db, lesson_mp4, capsys):
+    assert cli.main(["video", str(lesson_mp4), "--from", "5:00", "--later"]) == 1
+    assert "nothing is left" in capsys.readouterr().out
+    assert store.list_sessions() == []
+
+
+@needs_ffmpeg
+def test_a_different_part_of_the_same_video_is_a_new_class(db, lesson_mp4, capsys):
+    for argv in ([], ["--from", "0:10"], ["--from", "0:10"]):
+        assert cli.main(["video", str(lesson_mp4), "--later", *argv]) == 0
+    assert len(store.list_sessions()) == 2
+    assert "already have" in capsys.readouterr().out
+
+
+@needs_ffmpeg
+def test_trimmed_subtitles_line_up_with_the_trimmed_sound(db, monkeypatch, tmp_path):
+    _fake_link(monkeypatch, tmp_path)
+    with _no_summary():
+        assert cli.main(["video", "https://youtu.be/abc", "--from", "0:05"]) == 0
+    [session] = store.list_sessions()
+    first = store.load_transcript(session)[0]
+    assert first.start == 0 and first.text.startswith("Today we look at energy")
+
+
+def test_a_start_past_a_known_length_is_caught_before_downloading(db, monkeypatch, tmp_path, capsys):
+    _fake_link(monkeypatch, tmp_path, fail="must not download")
+    assert cli.main(["video", "https://youtu.be/abc", "--from", "1:00"]) == 1
+    assert "after the end of the video" in capsys.readouterr().out
+
+
+def test_a_playlist_cannot_be_trimmed(db, monkeypatch, capsys):
+    _fake_playlist(monkeypatch, ["Lesson 1"])
+    assert cli.main(["video", "https://youtube.com/playlist?list=x", "--from", "1:00"]) == 1
+    assert "one video at a time" in capsys.readouterr().out

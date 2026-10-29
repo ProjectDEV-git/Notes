@@ -484,11 +484,26 @@ def cmd_summarize(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------
 # video
 # --------------------------------------------------------------------------
-def _previous_import(origin: str) -> store.Session | None:
+def _previous_import(origin: str, start: float = 0.0, end: float | None = None) -> store.Session | None:
+    """The class already made from this video (and the same part of it)."""
+    from . import video
+
     for session in store.list_sessions():
-        if session.source_kind == config.SOURCE_VIDEO and session.source_name == origin:
+        if session.source_kind != config.SOURCE_VIDEO or session.source_name != origin:
+            continue
+        meta = video.load_meta(session.directory)
+        if float(meta.get("offset") or 0) == start and meta.get("end") == end:
             return session
     return None
+
+
+def video_time(text: str) -> float:
+    from .video import parse_time
+
+    try:
+        return parse_time(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _transcription_progress():
@@ -568,7 +583,16 @@ def _import_one(
 
     is_file = path is not None
 
-    earlier = None if args.again else _previous_import(origin)
+    start, end = args.start or 0.0, args.end
+    known_length = info.duration if info else 0
+    if known_length and start >= known_length:
+        return fail(f"--from {format_duration(start)} is after the end of the video "
+                    f"({format_duration(known_length)})")
+    if start or end is not None:
+        span = f"{format_duration(start)}–{format_duration(end) if end is not None else 'end'}"
+        title = f"{title} ({span})"
+
+    earlier = None if args.again else _previous_import(origin, start, end)
     if earlier is not None:
         if quiet_repeat:
             echo(f"[dim]already done: {earlier.title}[/dim]")
@@ -585,7 +609,8 @@ def _import_one(
     video.save_meta(
         session.directory,
         url=None if is_file else origin,
-        offset=0,
+        offset=start,
+        end=end,
         chapters=info.chapters if info else [],
     )
     download_dir = session.directory / "download"
@@ -594,7 +619,7 @@ def _import_one(
     try:
         if is_file:
             echo(f"[dim]reading the sound from {path.name}...[/dim]")
-            video.to_wav(path, session.audio_path)
+            video.to_wav(path, session.audio_path, start, end)
         else:
             echo(f"[bold]{title}[/bold]" + (
                 f" [dim]({format_duration(info.duration)})[/dim]" if info.duration else ""))
@@ -603,12 +628,12 @@ def _import_one(
                 caption_key=info.caption_key if use_captions else None,
             )
             echo("[dim]preparing the sound...[/dim]")
-            video.to_wav(media, session.audio_path)
+            video.to_wav(media, session.audio_path, start, end)
             if vtt is not None:
-                captions = video.parse_vtt(
+                captions = video.trim_captions(video.parse_vtt(
                     vtt.read_text(encoding="utf-8", errors="replace"),
                     info.language or "en",
-                )
+                ), start, end)
     except video.VideoError as exc:
         # Nothing usable arrived, so do not leave an empty class in the list.
         store.delete_session(session.id)
@@ -623,6 +648,9 @@ def _import_one(
         duration = wav_duration(session.audio_path)
     except Exception:
         duration = info.duration if info else 0.0
+    if (start or end is not None) and duration < 1:
+        store.delete_session(session.id)
+        return fail("nothing is left after trimming. Check the --from and --to times.")
 
     if captions:
         store.write_transcript(session, captions)
@@ -684,6 +712,8 @@ def _import_playlist(args: argparse.Namespace, playlist, language: str | None) -
     entries = playlist.entries[: args.limit] if args.limit else playlist.entries
     if not entries:
         return fail("that playlist has no videos in it")
+    if args.start or args.end is not None:
+        return fail("--from and --to work on one video at a time, not a playlist")
     count = len(entries)
     more = f" (the first {count} of {len(playlist.entries)})" if count < len(playlist.entries) else ""
     echo(f"[bold]{playlist.title}[/bold]: {count} videos{more}")
@@ -1145,6 +1175,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="make a new copy even if this video was done before",
     )
     video_cmd.add_argument(
+        "--from", dest="start", type=video_time, default=0.0, metavar="TIME",
+        help="start here, e.g. 2:30 to skip an intro",
+    )
+    video_cmd.add_argument(
+        "--to", dest="end", type=video_time, default=None, metavar="TIME",
+        help="stop here, e.g. 45:00 to skip the end",
+    )
+    video_cmd.add_argument(
         "--limit", "-n", type=non_negative_int, default=0,
         help="for a playlist: only the first N videos (0 = all of them)",
     )
@@ -1234,7 +1272,10 @@ def main(argv: list[str] | None = None) -> int:
     # nothing to go on at that point, so open the menu instead.
     if not argv:
         argv = ["menu"]
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if getattr(args, "end", None) is not None and args.end <= (args.start or 0):
+        parser.error("--to must be later than --from")
     try:
         return COMMANDS[args.command](args)
     except KeyboardInterrupt:

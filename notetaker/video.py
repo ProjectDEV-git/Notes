@@ -431,11 +431,40 @@ def download(
 # --------------------------------------------------------------------------
 # Converting to the format the rest of NoteTaker reads
 # --------------------------------------------------------------------------
-def to_wav(source: Path, destination: Path) -> None:
+def parse_time(text: str) -> float:
+    """'90', '1:30' or '1:02:03' as seconds, the way a video player shows time."""
+    parts = text.strip().split(":")
+    if not 1 <= len(parts) <= 3 or not all(p.strip().isdigit() for p in parts):
+        raise ValueError(f"{text!r} is not a time. Use minutes:seconds, like 2:30")
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + int(part)
+    return float(seconds)
+
+
+def trim_captions(segments: list[Segment], start: float, end: float | None) -> list[Segment]:
+    """Keep the subtitles inside [start, end), shifted so `start` becomes 0:00.
+
+    The trimmed audio starts at zero, and the transcript must line up with it
+    exactly as Whisper's would.
+    """
+    kept = []
+    for seg in segments:
+        if seg.end <= start or (end is not None and seg.start >= end):
+            continue
+        stop = seg.end if end is None else min(seg.end, end)
+        kept.append(Segment(round(max(seg.start - start, 0), 3), round(stop - start, 3),
+                            seg.text, seg.lang, seg.chunk))
+    return kept
+
+
+def to_wav(source: Path, destination: Path, start: float = 0.0, end: float | None = None) -> None:
     """Extract the sound as 16 kHz mono WAV, which is what a recording is.
 
-    Written to a temporary name first, so a failed conversion never leaves a
-    half-written audio.wav that `catchup` would then try to transcribe.
+    `start`/`end` (seconds) keep only that part, so an intro or the adverts
+    are never transcribed. Written to a temporary name first, so a failed
+    conversion never leaves a half-written audio.wav that `catchup` would
+    then try to transcribe.
     """
     ffmpeg = shutil.which(config.FFMPEG_BIN)
     if not ffmpeg:
@@ -443,7 +472,10 @@ def to_wav(source: Path, destination: Path) -> None:
     partial = destination.with_name(destination.stem + ".partial.wav")
     command = [
         ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        *(["-ss", f"{start:.3f}"] if start else []),
         "-i", str(source),
+        # -t, not -to: after an input seek the output clock starts at zero.
+        *(["-t", f"{end - start:.3f}"] if end is not None else []),
         "-vn", "-ac", str(config.CHANNELS), "-ar", str(config.SAMPLE_RATE),
         "-c:a", "pcm_s16le", str(partial),
     ]
