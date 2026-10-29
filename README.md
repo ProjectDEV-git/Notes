@@ -11,6 +11,10 @@ Works for both kinds of class:
 - **In person** — captures your microphone
 - **Online** (Zoom, Teams, YouTube) — captures your system audio
 
+And for lessons that are already over:
+
+- **From a video** — paste a YouTube link, or give it a video or audio file
+
 Handles **English and Thai** out of the box, and a Thai class produces Thai
 notes. [Adding another language](docs/LANGUAGES.md) takes about a minute:
 
@@ -58,6 +62,7 @@ notes            # opens a menu: pick a number, press Enter
   7. Record now, write notes later — saves battery in class
   8. Record with more options — language, length, reading level
   9. Check that everything works — microphone, notes writer
+  10. Make notes from a video — YouTube link or a video file
 ```
 
 It asks which subject, and how long the class is. Enter is a valid answer to
@@ -69,6 +74,7 @@ notes later      # record the sound only; write the notes after school
 notes catchup    # write notes for every class that does not have them yet
 notes now        # record until you press Ctrl-C (a long lecture)
 notes online     # record an online class (Zoom/Teams/YouTube)
+notes video LINK # make notes from a YouTube link or a video file
 notes last       # show the notes from your last class
 notes all        # list every class
 notes check      # confirm your microphone and notes writer work
@@ -106,6 +112,56 @@ here rather than lost: a transcript that was cut short is redone from the full
 recording, so you get the whole class and not just the start. The menu tells
 you when classes are waiting.
 
+### Videos and YouTube
+
+Missed the class, or the teacher posted it online? Paste the link:
+
+```bash
+notes https://www.youtube.com/watch?v=...     # a link is enough
+notes video ~/Downloads/week4-physics.mp4     # or a file you already have
+```
+
+Or pick **10. Make notes from a video** in the menu, paste the link (or drag
+the file into the window), and press Enter.
+
+- **Most video sites work**, not just YouTube: Vimeo, Facebook, school
+  platforms, and over a thousand others, via
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp). Video and audio **files** work
+  too: `.mp4`, `.mov`, `.mkv`, `.mp3`, `.m4a`, and so on.
+- **The first link downloads one extra helper** (about 60 MB) and then never
+  again. Files do not need it.
+- **Subtitles written by the creator are used as the transcript** when they
+  are in the language being spoken. They are accurate and instant, which
+  matters most for Thai: no waiting several times the video's length for
+  transcription. Add `--whisper` to transcribe the sound anyway.
+- **Every note says when it was said.** For a link, the time is clickable and
+  opens the video at that moment, so anything unclear is one click from a
+  replay: `- Energy is conserved ([12:34](https://youtube.com/watch?v=...&t=751s))`.
+  A note that cannot be traced to the transcript gets no time rather than a
+  wrong one.
+- **Videos with chapters get them as headings.** The key ideas are grouped
+  under the video's own chapter titles, in order.
+- **Only the sound is downloaded**, not the picture, so even an hour-long
+  lesson is quick to fetch.
+- `--later` saves the sound now and leaves the work for `notes catchup`, the
+  same as a recorded class. Each video becomes an ordinary class in
+  `notes all`, so `show`, `export` and `summarize --hq` all work on it.
+- Giving it the **same link twice** shows the notes you already have instead
+  of doing it all again. Add `--again` to start over.
+- **Skip the intro or the adverts** with `--from 2:30` and `--to 45:00`. Only
+  that part is transcribed, and the timestamps in the notes still match the
+  full video, so the links land in the right place.
+- **A playlist link does the whole course**, one class per video. `--limit 5`
+  does only the first five. If it stops part-way, run the same command again:
+  finished videos are skipped. For a long playlist, `--later` downloads
+  everything now and `notes catchup` writes it up afterwards.
+
+When a site changes how it works (YouTube does, often), NoteTaker updates the
+helper by itself and tries again. Private, members-only and age-restricted
+videos cannot be downloaded; download those another way and give NoteTaker
+the file. A whole channel is not downloaded either: use one of its playlists. For a stream that is **live right now**, record it with
+`notes online` while it plays.
+
 Anything else is passed to the full CLI:
 
 ```bash
@@ -130,6 +186,11 @@ notetaker record [--source mic|system] [--title T] [--live-notes] [--lang auto|e
                [--later]               # record sound only, write notes later
                [--level school|university]
 notetaker catchup [--limit N]          # write up every class still missing notes
+notetaker video <link-or-file> [--title T] [--lang L] [--later] [--hq]
+               [--whisper]             # ignore the video's own subtitles
+               [--again]               # redo a video you already have
+               [--limit N]             # for a playlist: only the first N videos
+               [--from 2:30] [--to 45:00]  # only that part of the video
 notetaker list                         # past recordings
 notetaker show <id> [--transcript]
 notetaker summarize <id> [--rerun] [--hq] [--level school|university]
@@ -326,13 +387,15 @@ into windows, each reduced to a few points, then consolidated and deduplicated.
 Administrative asides ("the exam is on Friday") are separated from the actual
 content.
 
-Recordings live in `~/.local/share/notetaker/sessions/<id>/`:
+Recordings live in `~/.local/share/notetaker/sessions/<id>/`
+(`%LOCALAPPDATA%\NoteTaker\sessions\<id>\` on Windows):
 
 | file | what it is |
 |---|---|
 | `audio.wav` | the recording, kept so you can re-run `--hq` |
 | `transcript.jsonl` | timestamped transcript, written as the class happens |
 | `notes.md` | the key ideas |
+| `video.json` | for a video: its link, chapters and any `--from` offset |
 
 ---
 
@@ -455,16 +518,20 @@ for the whole day rather than waiting after each period.
   a smaller model via `--summary-model`, cuts the wait proportionally.
 - **Recordings are never deleted.** A one-hour class keeps about 115 MB of
   audio so `--hq` re-runs stay possible. Delete old sessions yourself from
-  `~/.local/share/notetaker/sessions/` if space runs short.
+  `~/.local/share/notetaker/sessions/` (on Windows,
+  `%LOCALAPPDATA%\NoteTaker\sessions\`) if space runs short.
 - **macOS needs a loopback driver for online classes.** BlackHole or similar;
   see Install. In-person recording works with no extra setup.
-- Linux and macOS only. Windows is not supported.
+- **Windows needs Stereo Mix (or VB-CABLE) for online classes.** Many
+  laptops hide it; `notes setup-online` shows how to switch it on. In-person
+  recording works with no extra setup.
 
 ## If something goes wrong
 
 **"no 'system' source available"** — run `notes check`. On Linux your machine
 exposes no `.monitor` device; on macOS you need a loopback driver
-(`brew install blackhole-2ch`).
+(`brew install blackhole-2ch`); on Windows, `notes setup-online` switches on
+Stereo Mix.
 
 **Recording is silent** — for online classes, make sure the audio really is
 playing through the sink you selected. `notetaker devices` marks the default.
@@ -472,7 +539,8 @@ playing through the sink you selected. `notetaker devices` marks the default.
 **Not sure what is wrong** — run `notes check`. It tests every part and prints
 the exact command to fix whatever is missing.
 
-**"cannot reach Ollama"** — run `ollama serve`. Your transcript is already
+**"cannot reach Ollama"** — open the Ollama app (Mac, Windows) or run
+`ollama serve` (Linux). Your transcript is already
 saved; run `notetaker summarize <id>` once Ollama is up.
 
 **Notes look wrong** — check the transcript first with

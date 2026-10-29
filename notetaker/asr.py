@@ -23,7 +23,7 @@ import unicodedata
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from . import config
 
@@ -212,8 +212,17 @@ class Transcriber:
             self._previous = (self._previous + deduped)[-12:]
         return deduped
 
-    def transcribe_file(self, path: Path) -> list[Segment]:
-        """Transcribe a complete recording in one pass (used by --hq re-runs)."""
+    def transcribe_file(
+        self,
+        path: Path,
+        progress: Callable[[float, float], None] | None = None,
+    ) -> list[Segment]:
+        """Transcribe a complete recording in one pass (--hq re-runs, videos).
+
+        `progress(done_seconds, total_seconds)` is called as each segment is
+        produced: an hour-long video takes most of an hour on CPU, and a
+        silent terminal for that long looks like a hang.
+        """
         segments, info = self._model.transcribe(
             str(path),
             language=self.forced_language,
@@ -222,11 +231,18 @@ class Transcriber:
         )
         lang = self.forced_language or info.language
         self._locked_language = lang
-        return [
-            Segment(round(s.start, 3), round(s.end, 3), s.text.strip(), lang, 0)
-            for s in segments
-            if s.text.strip()
-        ]
+        total = float(getattr(info, "duration", 0) or 0)
+        produced: list[Segment] = []
+        for seg in segments:
+            text = seg.text.strip()
+            if text:
+                produced.append(Segment(round(seg.start, 3), round(seg.end, 3), text, lang, 0))
+            if progress:
+                try:
+                    progress(float(seg.end), total)
+                except Exception:
+                    pass  # a broken display must never cost the transcript
+        return produced
 
 
 # --------------------------------------------------------------------------

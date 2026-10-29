@@ -4,6 +4,7 @@
 #   notes            open the menu (nothing to remember)
 #   notes now        start recording straight away (microphone)
 #   notes online     record an online lecture (Zoom/Teams/YouTube)
+#   notes video LINK make notes from a YouTube link or a video/audio file
 #   notes class      record a normal class, stopping at the end by itself
 #   notes later      record the sound only, write the notes after school
 #   notes catchup    write notes for every class that does not have them
@@ -55,7 +56,12 @@ auto_update() {
 
 auto_update "${1-}"
 
-run() { cd "$APP_DIR" && exec "$PY" -m notetaker.cli "$@"; }
+# Python runs from the app folder, so tell it where the student actually was:
+# `notes video lesson.mp4` and `notes export x -o notes.md` mean that folder.
+run() {
+    export NOTES_CALLER_DIR="$PWD"
+    cd "$APP_DIR" && exec "$PY" -m notetaker.cli "$@"
+}
 
 latest_session() {
     cd "$APP_DIR" && "$PY" - <<'PY'
@@ -90,9 +96,27 @@ case "${1-}" in
         shift
         run catchup "$@"
         ;;
-    online|zoom|teams|system|meet|youtube)
+    # `notes youtube` alone records whatever is playing. Given a link, it
+    # makes notes from that video instead.
+    youtube)
+        shift
+        if [[ $# -gt 0 && "$1" != -* ]]; then
+            run video "$@"
+        else
+            run record --source system --live-notes "$@"
+        fi
+        ;;
+    online|zoom|teams|system|meet)
         shift
         run record --source system --live-notes "$@"
+        ;;
+    video|watch|link|file|import)
+        shift
+        run video "$@"
+        ;;
+    # A pasted link or a dragged-in file needs no verb at all.
+    http://*|https://*|www.*|youtu.be/*|youtube.com/*|m.youtube.com/*)
+        run video "$@"
         ;;
     last|latest|read)
         latest="$(latest_session)"
@@ -104,6 +128,10 @@ case "${1-}" in
         ;;
     all|ls|list)
         run list
+        ;;
+    show|open)
+        shift
+        run show "$@"
         ;;
     check|test|doctor|setup)
         shift
@@ -124,6 +152,7 @@ notes later      record the sound only; write the notes after school
 notes catchup    write notes for every class that does not have them yet
 notes now        record until you press Ctrl-C (a long lecture)
 notes online     record an online class (Zoom/Teams/YouTube)
+notes video LINK make notes from a YouTube link or a video/audio file
 notes setup-online  one-time setup so online classes can be recorded
 notes last       show the notes from your last class
 notes all        list every class
@@ -142,6 +171,10 @@ Anything else is passed to the full CLI, for example:
 EOF
         ;;
     *)
-        run "$@"
+        if [[ -f "$1" ]]; then
+            run video "$@"
+        else
+            run "$@"
+        fi
         ;;
 esac

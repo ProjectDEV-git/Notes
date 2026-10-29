@@ -1,0 +1,8 @@
+# Video links (YouTube and ~1800 other sites). Installed the first time a link
+# is used, not with requirements.txt: Deno alone is ~40 MB, and the startup
+# updater only gives pip two minutes on school wifi.
+#
+# Not pinned: YouTube changes often and an old yt-dlp stops working. NoteTaker
+# upgrades it by itself when a download fails in a way an upgrade can fix.
+# `deno` is the JavaScript runtime YouTube needs; yt-dlp finds it in this venv.
+yt-dlp[default,deno]>=2025.11.12

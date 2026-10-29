@@ -471,6 +471,18 @@ def _record_later() -> int:
     return _cli(*argv)
 
 
+def _from_video() -> int:
+    from .video import clean_pasted
+
+    out("\n[bold]Paste a YouTube link, or drag a video file into this window.[/bold]")
+    out("[dim]Most video sites work, and so do files such as .mp4 and .mp3.[/dim]")
+    source = clean_pasted(ask("\nLink or file, then press Enter: ", ""))
+    if not source:
+        out("[yellow]Nothing was pasted. Nothing was changed.[/yellow]")
+        return 0
+    return _cli("video", source)
+
+
 def options() -> list[Option]:
     return [
         Option("1", "Record the class I am in", "uses the microphone",
@@ -486,6 +498,8 @@ def options() -> list[Option]:
         Option("8", "Record with more options", "language, length, reading level",
                _record_with_options),
         Option("9", "Check that everything works", "microphone, notes writer", _check),
+        Option("10", "Make notes from a video", "YouTube link or a video file",
+               _from_video),
     ]
 
 
