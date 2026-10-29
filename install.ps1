@@ -226,11 +226,13 @@ if (Confirm-Step "Put a NoteTaker icon on your Desktop?") {
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath("Desktop")) "NoteTaker.lnk"))
     $link.TargetPath = "$env:WINDIR\System32\cmd.exe"
-    $link.Arguments = "/k `"$launcher`""
+    # Opens the NoteTaker window. /k keeps the prompt afterwards, so every
+    # `notes` command still works there once the window is closed.
+    $link.Arguments = "/k `"$launcher`" ui"
     $link.WorkingDirectory = $env:USERPROFILE
     $link.Description = "Record a class and write the notes"
     $link.Save()
-    Ok "double-click NoteTaker on your Desktop to start"
+    Ok "double-click NoteTaker on your Desktop to open it"
     $madeIcon = $true
 }
 

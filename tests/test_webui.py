@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import threading
 import time
 from urllib.parse import quote
@@ -164,6 +165,69 @@ def test_the_window_stops_a_recording_the_same_way_as_ctrl_c(db, monkeypatch, tm
     assert time.monotonic() - started < 5, "the stop file did not stop the recording"
     assert code == 0 and stopped.get("clean")
     assert [s.title for s in store.list_sessions()] == ["Maths"]
+
+
+# ---------------------------------------------- the window going away
+@pytest.fixture()
+def link(tmp_path, monkeypatch):
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(cli.time, "monotonic", lambda: clock["now"])
+    alive = tmp_path / "alive"
+    alive.touch()
+    monkeypatch.setenv("NOTETAKER_STOP_FILE", str(tmp_path / "stop"))
+    monkeypatch.setenv("NOTETAKER_ALIVE_FILE", str(alive))
+    return cli._WindowLink(), clock, alive, tmp_path / "stop"
+
+
+def test_a_recording_keeps_going_while_the_window_is_there(link):
+    window, clock, alive, _ = link
+    for beat in range(30):
+        clock["now"] += 2
+        os.utime(alive, (beat + 1, beat + 1))  # the window's heartbeat
+        assert not window.should_stop()
+
+
+def test_a_recording_stops_itself_when_the_window_goes_quiet(link):
+    """Closing the terminal must not leave a class recording forever."""
+    window, clock, _, _ = link
+    assert not window.should_stop()
+    clock["now"] += cli._WindowLink.GRACE_SECONDS - 1
+    assert not window.should_stop(), "a short pause is not the window closing"
+    clock["now"] += 2
+    assert window.should_stop()
+
+
+def test_a_missing_heartbeat_file_also_stops_it(link):
+    window, clock, alive, _ = link
+    window.should_stop()
+    alive.unlink()
+    assert not window.should_stop()
+    clock["now"] += cli._WindowLink.GRACE_SECONDS + 1
+    assert window.should_stop()
+
+
+def test_pressing_stop_is_immediate(link):
+    window, _, _, stop = link
+    stop.touch()
+    assert window.should_stop()
+
+
+def test_a_recording_from_the_terminal_never_stops_by_itself(monkeypatch):
+    monkeypatch.delenv("NOTETAKER_STOP_FILE", raising=False)
+    monkeypatch.delenv("NOTETAKER_ALIVE_FILE", raising=False)
+    monkeypatch.setattr(cli.time, "monotonic", lambda: 1e9)
+    assert not cli._WindowLink().should_stop()
+
+
+def test_the_window_keeps_its_heartbeat_going_while_a_job_runs(db, monkeypatch):
+    monkeypatch.setattr(webui, "HEARTBEAT_SECONDS", 0.05)
+    job = webui.Job("catchup", ["catchup"], "Write up", {})
+    job.start()
+    assert job._alive_file.exists()
+    deadline = time.time() + 60
+    while job.status == "running" and time.time() < deadline:
+        time.sleep(0.05)
+    assert not job._alive_file.exists(), "cleaned up when the job ends"
 
 
 # ----------------------------------------------------------------- HTTP

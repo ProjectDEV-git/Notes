@@ -21,6 +21,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 from . import config, store, summarize
@@ -220,15 +221,49 @@ def _render_live(state, source_label: str, live_notes: bool, remaining: float | 
     return Panel(body, title="NoteTaker", subtitle="press Ctrl-C to stop", border_style="blue")
 
 
-def _stop_file_requested() -> bool:
-    """True once the NoteTaker window has asked this recording to stop.
+class _WindowLink:
+    """How a recording started from the NoteTaker window knows to stop.
 
-    The window runs `record` as a child process. A file is the one stop
-    signal that works the same on Windows, where a child cannot be sent
-    Ctrl-C, and it takes the same careful path as Ctrl-C does.
+    The window runs `record` as a child process, kept apart from the terminal
+    so closing that terminal cannot kill it mid-write. Two files connect them,
+    because files work the same on every platform (a Windows child cannot be
+    sent Ctrl-C):
+
+      * the stop file appears when Stop recording is pressed
+      * the alive file is touched every couple of seconds by the window
+
+    If the window disappears without saying stop (its terminal was closed, or
+    it crashed), the alive file goes quiet and the recording stops itself.
+    Either way it takes the same careful path as Ctrl-C, so the class is saved
+    and its notes are written.
+
+    Quiet time is measured on this process's own clock, which pauses while
+    the laptop sleeps, so closing the lid does not count as the window going
+    away.
     """
-    path = os.environ.get("NOTETAKER_STOP_FILE")
-    return bool(path) and os.path.exists(path)
+
+    GRACE_SECONDS = 20.0
+
+    def __init__(self) -> None:
+        self.stop_file = os.environ.get("NOTETAKER_STOP_FILE")
+        self.alive_file = os.environ.get("NOTETAKER_ALIVE_FILE")
+        self._seen: float | None = None
+        self._changed = time.monotonic()
+
+    def should_stop(self) -> bool:
+        if self.stop_file and os.path.exists(self.stop_file):
+            return True
+        if not self.alive_file:
+            return False
+        try:
+            mtime: float | None = os.stat(self.alive_file).st_mtime
+        except OSError:
+            mtime = None
+        now = time.monotonic()
+        if mtime != self._seen:
+            self._seen, self._changed = mtime, now
+            return False
+        return now - self._changed > self.GRACE_SECONDS
 
 
 def cmd_record(args: argparse.Namespace) -> int:
@@ -277,6 +312,7 @@ def cmd_record(args: argparse.Namespace) -> int:
         return fail(str(exc))
 
     stopping = threading.Event()
+    window = _WindowLink()
 
     def handle_interrupt(signum, frame):
         stopping.set()
@@ -308,7 +344,7 @@ def cmd_record(args: argparse.Namespace) -> int:
                     left = remaining()
                     if (left is not None and left <= 0) or pipeline.state.capture_stopped:
                         break
-                    if _stop_file_requested():
+                    if window.should_stop():
                         break
                     live.update(_render_live(pipeline.state, label, args.live_notes, left))
                     stopping.wait(0.25)
@@ -318,7 +354,7 @@ def cmd_record(args: argparse.Namespace) -> int:
                 left = remaining()
                 if (left is not None and left <= 0) or pipeline.state.capture_stopped:
                     break
-                if _stop_file_requested():
+                if window.should_stop():
                     break
                 stopping.wait(0.5)
     finally:

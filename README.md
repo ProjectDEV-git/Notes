@@ -96,7 +96,9 @@ It is the same app underneath: every button runs the command you would type,
 and the window shows that command when it finishes. It only listens on this
 computer (`127.0.0.1`) and needs no internet. Keep the terminal it started
 from open while you use it. Press Ctrl-C there to close NoteTaker: a class
-that is still recording is stopped and saved properly first.
+that is still recording is stopped and saved properly first. Closing that
+window by accident is safe too: the recording notices within half a minute,
+stops, saves, and writes its notes.
 
 The `notes` launcher checks for updates automatically when it starts. It skips
 the check if the checkout has local changes, and continues opening the app if
@@ -274,7 +276,9 @@ unzip it, and double-click the installer for your computer:
 
 It explains each helper app it needs in plain words, asks once, installs them
 all, and puts a **NoteTaker** icon on your Desktop. After that you never need
-the terminal: double-click the icon and pick a number.
+the terminal: double-click the icon and the NoteTaker window opens in your
+browser. Typing still works too: `notes` opens the numbered menu, and every
+command below is unchanged.
 
 On Windows you can also paste one line into PowerShell:
 

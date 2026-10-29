@@ -83,3 +83,16 @@ def test_readme_does_not_say_windows_is_unsupported():
     readme = (REPO / "README.md").read_text(encoding="utf-8")
     assert "Windows is not supported" not in readme
     assert "Linux and macOS only" not in readme
+
+
+def test_windows_desktop_icon_opens_the_window_and_keeps_a_prompt():
+    """Double-click opens the window; /k leaves a prompt for typed commands."""
+    text = PS1.read_text(encoding="utf-8-sig")
+    line = next(l for l in text.splitlines() if "$link.Arguments" in l)
+    assert "/k" in line and line.rstrip().endswith('" ui"')
+
+
+def test_the_command_line_is_unchanged_by_the_window():
+    assert shortcuts.translate([]) == ["menu"], "bare `notes` still opens the menu"
+    assert shortcuts.translate(["class"])[0] == "record"
+    assert shortcuts.translate(["ui"]) == ["ui"]

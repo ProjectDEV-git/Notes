@@ -36,6 +36,11 @@ PAGE = Path(__file__).resolve().parent / "index.html"
 DEFAULT_PORT = 8765
 IS_WINDOWS = sys.platform == "win32"
 
+# How often the window tells a recording it is still there. A recording that
+# hears nothing for HEARTBEAT_GRACE seconds (see cli._WindowLink) stops and
+# saves itself, so closing the terminal can never leave one running unseen.
+HEARTBEAT_SECONDS = 2.0
+
 # How many lines of a job's output the window keeps. Enough to show an error
 # in full, small enough that polling every second stays cheap.
 LOG_LINES = 200
@@ -140,7 +145,9 @@ class Job:
         self.session_id: str | None = (
             request.get("session") if kind == "summarize" else None
         )
-        self._stop_file = Path(tempfile.gettempdir()) / f"notetaker-stop-{self.id}"
+        tmp = Path(tempfile.gettempdir())
+        self._stop_file = tmp / f"notetaker-stop-{self.id}"
+        self._alive_file = tmp / f"notetaker-alive-{self.id}"
         self._proc: subprocess.Popen | None = None
 
     # ---------------------------------------------------------------- run
@@ -154,12 +161,22 @@ class Job:
             COLUMNS="160",
             NO_COLOR="1",
             NOTETAKER_STOP_FILE=str(self._stop_file),
+            NOTETAKER_ALIVE_FILE=str(self._alive_file),
             # A job is not the place to update the app under itself.
             NOTES_AUTO_UPDATE="0",
         )
+        # The child is kept apart from the terminal, so closing that window
+        # (or pressing Ctrl-C in it) cannot kill a recording mid-write. The
+        # window stops it instead, the careful way, or the heartbeat does.
         kwargs: dict = {}
         if IS_WINDOWS:
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+            kwargs["creationflags"] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+                | subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+            )
+        else:
+            kwargs["start_new_session"] = True
+        self._alive_file.touch()
         self._proc = subprocess.Popen(
             [sys.executable, "-m", "notetaker.cli", *self.argv],
             cwd=APP_DIR,
@@ -174,6 +191,15 @@ class Job:
             **kwargs,
         )
         threading.Thread(target=self._read, daemon=True).start()
+        threading.Thread(target=self._heartbeat, daemon=True).start()
+
+    def _heartbeat(self) -> None:
+        while self.status == "running":
+            try:
+                self._alive_file.touch()
+            except OSError:
+                pass
+            time.sleep(HEARTBEAT_SECONDS)
 
     def _read(self) -> None:
         assert self._proc and self._proc.stdout
@@ -183,6 +209,7 @@ class Job:
                 self.log.append(line)
         self.returncode = self._proc.wait()
         self._stop_file.unlink(missing_ok=True)
+        self._alive_file.unlink(missing_ok=True)
         # Before the status changes: the window opens this class the moment
         # it sees the job finish.
         self._find_session()
@@ -508,7 +535,22 @@ def make_server(port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
         return ThreadingHTTPServer(("127.0.0.1", 0), handler)
 
 
+def _quietly(echo):
+    """An echo that survives its terminal being closed."""
+    def say(message: str) -> None:
+        try:
+            echo(message)
+        except Exception:
+            pass
+    return say
+
+
+def _close_on(signum, frame) -> None:
+    raise KeyboardInterrupt
+
+
 def serve(port: int = DEFAULT_PORT, open_browser: bool = True, echo=print) -> int:
+    echo = _quietly(echo)
     config.ensure_dirs()
     if port and _already_running(port):
         url = f"http://127.0.0.1:{port}/"
@@ -521,6 +563,14 @@ def serve(port: int = DEFAULT_PORT, open_browser: bool = True, echo=print) -> in
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     echo(f"NoteTaker is open at {url}")
     echo("Keep this window open while you use it. Press Ctrl-C to close NoteTaker.")
+    echo("Prefer typing? Every notes command still works in a terminal.")
+    # Closing the terminal window is the same as Ctrl-C: finish safely.
+    for name in ("SIGHUP", "SIGTERM"):
+        if hasattr(signal, name):
+            try:
+                signal.signal(getattr(signal, name), _close_on)
+            except ValueError:  # not the main thread (tests)
+                pass
     if open_browser:
         threading.Timer(0.3, webbrowser.open, args=(url,)).start()
     try:
