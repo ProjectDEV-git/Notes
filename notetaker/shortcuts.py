@@ -30,6 +30,7 @@ for _words, _argv in [
     (("check", "test", "doctor", "setup"), ["check", "--listen"]),
     (("update", "upgrade"), ["update"]),
     (("menu",), ["menu"]),
+    (("ui", "app", "window"), ["ui"]),
     (("video", "watch", "link", "file", "import"), ["video"]),
 ]:
     for _word in _words:
@@ -48,6 +49,7 @@ notes setup-online one-time setup so online classes can be recorded
 notes last         show the notes from your last class
 notes all          list every class
 notes check        confirm the microphone and notes writer work
+notes ui           open the NoteTaker window in your browser
 notes update       update NoteTaker
 """
 

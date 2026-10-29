@@ -111,6 +111,14 @@ def cmd_menu(args: argparse.Namespace) -> int:
     return menu_main()
 
 
+def cmd_ui(args: argparse.Namespace) -> int:
+    """Open the NoteTaker window in the browser."""
+    from .webui import serve
+
+    return serve(port=args.port, open_browser=not args.no_browser,
+                 echo=lambda m: echo(m))
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     """Verify the machine can record and summarize before a lecture starts."""
     from .menu import ask, print_checks, run_checks
@@ -212,6 +220,17 @@ def _render_live(state, source_label: str, live_notes: bool, remaining: float | 
     return Panel(body, title="NoteTaker", subtitle="press Ctrl-C to stop", border_style="blue")
 
 
+def _stop_file_requested() -> bool:
+    """True once the NoteTaker window has asked this recording to stop.
+
+    The window runs `record` as a child process. A file is the one stop
+    signal that works the same on Windows, where a child cannot be sent
+    Ctrl-C, and it takes the same careful path as Ctrl-C does.
+    """
+    path = os.environ.get("NOTETAKER_STOP_FILE")
+    return bool(path) and os.path.exists(path)
+
+
 def cmd_record(args: argparse.Namespace) -> int:
     config.ensure_dirs()
 
@@ -289,6 +308,8 @@ def cmd_record(args: argparse.Namespace) -> int:
                     left = remaining()
                     if (left is not None and left <= 0) or pipeline.state.capture_stopped:
                         break
+                    if _stop_file_requested():
+                        break
                     live.update(_render_live(pipeline.state, label, args.live_notes, left))
                     stopping.wait(0.25)
         else:
@@ -297,7 +318,9 @@ def cmd_record(args: argparse.Namespace) -> int:
                 left = remaining()
                 if (left is not None and left <= 0) or pipeline.state.capture_stopped:
                     break
-                stopping.wait(1.0)
+                if _stop_file_requested():
+                    break
+                stopping.wait(0.5)
     finally:
         if pipeline.state.capture_stopped:
             echo(
@@ -1094,6 +1117,11 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("menu", help="the simple menu (no commands to remember)")
+    ui = subparsers.add_parser("ui", help="open the NoteTaker window in your browser")
+    ui.add_argument("--port", type=non_negative_int, default=8765,
+                    help="local port to use. Default: 8765")
+    ui.add_argument("--no-browser", action="store_true",
+                    help="do not open the browser, just print the address")
     check = subparsers.add_parser("check", help="check the microphone, devices and notes writer")
     check.add_argument(
         "--listen", action="store_true",
@@ -1251,6 +1279,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 COMMANDS = {
     "menu": cmd_menu,
+    "ui": cmd_ui,
     "check": cmd_check,
     "setup-online": cmd_setup_online,
     "devices": cmd_devices,

@@ -1,0 +1,989 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>NoteTaker</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c1c1a'/%3E%3Cpath d='M10 9h9l3 3v11H10z' fill='none' stroke='%23fff' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M13 15h6M13 19h4' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f7f7f5;
+  --panel: #ffffff;
+  --ink: #1c1c1a;
+  --ink-2: #5d5c56;
+  --ink-3: #94928a;
+  --line: #e8e6e1;
+  --line-2: #d9d7d0;
+  --hover: #efeeea;
+  --select: #e9e8e3;
+  --primary: #1c1c1a;
+  --on-primary: #ffffff;
+  --rec: #e5484d;
+  --rec-soft: #fdecec;
+  --ok: #2b8a57;
+  --warn: #a8670b;
+  --warn-soft: #fbf3e4;
+  --focus: #3f6ff0;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.06);
+  --radius: 10px;
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+          "Noto Sans Thai", "Leelawadee UI", "Thonburi", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131312;
+    --panel: #1a1a19;
+    --ink: #ecebe6;
+    --ink-2: #a9a79f;
+    --ink-3: #75736c;
+    --line: #2a2a27;
+    --line-2: #383834;
+    --hover: #22221f;
+    --select: #2a2a27;
+    --primary: #ecebe6;
+    --on-primary: #151514;
+    --rec: #ff6166;
+    --rec-soft: #3a1d1e;
+    --ok: #4cc283;
+    --warn: #e0a541;
+    --warn-soft: #33281a;
+    --focus: #7d9cff;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131312; --panel: #1a1a19; --ink: #ecebe6; --ink-2: #a9a79f; --ink-3: #75736c;
+  --line: #2a2a27; --line-2: #383834; --hover: #22221f; --select: #2a2a27;
+  --primary: #ecebe6; --on-primary: #151514; --rec: #ff6166; --rec-soft: #3a1d1e;
+  --ok: #4cc283; --warn: #e0a541; --warn-soft: #33281a; --focus: #7d9cff;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.3);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button, input, select { font: inherit; color: inherit; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
+        stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ------------------------------------------------------------- layout */
+.app { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+.side {
+  display: flex; flex-direction: column; min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+}
+.main { overflow-y: auto; min-width: 0; background: var(--panel); }
+.view { max-width: 720px; margin: 0 auto; padding: 56px 40px 96px; }
+
+/* ------------------------------------------------------------ sidebar */
+.side-top { padding: 18px 16px 10px; display: grid; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; font-weight: 600; letter-spacing: -0.01em; }
+.brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--ink); display: grid; place-items: center; }
+.brand-mark svg { width: 14px; height: 14px; stroke: var(--bg); stroke-width: 2; }
+.btn-new {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line-2);
+  background: var(--panel); cursor: pointer; text-decoration: none; font-weight: 500;
+  box-shadow: 0 1px 1px rgb(0 0 0 / 0.03);
+}
+.btn-new:hover { border-color: var(--ink-3); }
+.btn-new[aria-current="page"] { border-color: var(--ink); }
+.search {
+  width: 100%; padding: 8px 10px 8px 32px; border-radius: 8px;
+  border: 1px solid transparent; background: var(--hover); outline: none;
+}
+.search:focus { border-color: var(--line-2); background: var(--panel); }
+.search-wrap { position: relative; }
+.search-wrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--ink-3); }
+
+.notice {
+  margin: 0 16px 6px; padding: 10px 12px; border-radius: 8px;
+  display: flex; align-items: center; gap: 10px; font-size: 13.5px;
+  text-decoration: none; cursor: pointer; border: 0; width: calc(100% - 32px); text-align: left;
+}
+.notice.running { background: var(--rec-soft); color: var(--ink); }
+.notice.running.busy { background: var(--hover); }
+.notice.pending { background: var(--warn-soft); }
+.notice b { font-weight: 600; }
+.notice .grow { flex: 1; min-width: 0; }
+.notice .act { font-weight: 600; white-space: nowrap; }
+
+.list { flex: 1; overflow-y: auto; padding: 4px 10px 16px; }
+.group { margin-top: 14px; }
+.group-label { padding: 4px 10px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.item {
+  display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; align-items: center;
+  padding: 8px 10px; border-radius: 8px; text-decoration: none;
+}
+.item:hover { background: var(--hover); }
+.item[aria-current="page"] { background: var(--select); }
+.item-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.item-meta { grid-column: 1; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-flag { grid-row: 1 / span 2; grid-column: 2; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.list-empty { padding: 24px 12px; color: var(--ink-3); font-size: 13.5px; }
+
+.side-foot {
+  border-top: 1px solid var(--line); padding: 12px 16px;
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-3);
+}
+.side-foot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.side-foot .dot.off { background: var(--warn); }
+.side-foot .grow { flex: 1; }
+.link-btn { border: 0; background: none; padding: 2px 4px; cursor: pointer; color: var(--ink-2); font-size: 12.5px; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.link-btn:hover { color: var(--ink); text-decoration-color: currentColor; }
+
+/* ------------------------------------------------------------ type */
+.h1 { font-size: 28px; line-height: 1.2; letter-spacing: -0.02em; font-weight: 650; margin: 0; overflow-wrap: anywhere; }
+.lede { color: var(--ink-2); margin: 8px 0 0; }
+.eyebrow { font-size: 12.5px; font-weight: 500; color: var(--ink-3); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.muted { color: var(--ink-3); }
+
+/* ------------------------------------------------------------ controls */
+.seg { justify-self: start; display: inline-flex; padding: 3px; gap: 2px; background: var(--hover); border-radius: 9px; }
+.seg button {
+  border: 0; background: none; padding: 6px 14px; border-radius: 7px; cursor: pointer;
+  color: var(--ink-2); font-weight: 500; display: inline-flex; align-items: center; gap: 7px;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-selected="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px var(--line); }
+.seg button:disabled { opacity: 0.4; cursor: default; }
+.seg.small button { padding: 4px 11px; font-size: 13.5px; }
+
+.form { margin-top: 32px; display: grid; gap: 26px; }
+.field { display: grid; gap: 8px; }
+.label { font-size: 13.5px; font-weight: 600; }
+.hint { font-size: 13px; color: var(--ink-3); margin: 0; }
+.input {
+  width: 100%; padding: 11px 13px; border-radius: 9px; border: 1px solid var(--line-2);
+  background: var(--panel); outline: none; transition: border-color .12s, box-shadow .12s;
+}
+.input::placeholder { color: var(--ink-3); }
+.input:focus { border-color: var(--ink-3); box-shadow: 0 0 0 3px var(--hover); }
+.input.big { font-size: 17px; padding: 13px 14px; }
+select.input { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 36px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 1px solid var(--line-2); background: var(--panel); border-radius: 999px;
+  padding: 5px 12px; cursor: pointer; font-size: 13.5px; color: var(--ink-2);
+}
+.chip:hover { border-color: var(--ink-3); color: var(--ink); }
+.chip[aria-pressed="true"], .chip[aria-checked="true"] { background: var(--ink); border-color: var(--ink); color: var(--panel); }
+
+.toggle { display: flex; gap: 14px; align-items: flex-start; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.switch { flex: none; width: 34px; height: 20px; border-radius: 999px; background: var(--line-2); position: relative; transition: background .15s; margin-top: 1px; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.2); transition: transform .15s; }
+.toggle input:checked + .switch { background: var(--ink); }
+.toggle input:checked + .switch::after { transform: translateX(14px); background: var(--panel); }
+.toggle input:focus-visible + .switch { outline: 2px solid var(--focus); outline-offset: 2px; }
+.toggle-text b { display: block; font-weight: 600; font-size: 14px; }
+.toggle-text span { display: block; font-size: 13px; color: var(--ink-3); }
+
+details.more > summary { cursor: pointer; list-style: none; font-size: 13.5px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary svg { transition: transform .15s; }
+details.more[open] > summary svg { transform: rotate(90deg); }
+details.more > .more-body { margin-top: 14px; display: grid; gap: 14px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 14px; border-radius: 9px; border: 1px solid var(--line-2);
+  background: var(--panel); cursor: pointer; font-weight: 500; text-decoration: none; white-space: nowrap;
+}
+.btn:hover { border-color: var(--ink-3); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.btn.primary:hover { opacity: 0.9; }
+.btn.lg { padding: 13px 20px; font-size: 15.5px; border-radius: 11px; }
+.btn.danger { color: var(--rec); border-color: color-mix(in srgb, var(--rec) 40%, var(--line-2)); }
+.btn.danger:hover { border-color: var(--rec); background: var(--rec-soft); }
+.btn.ghost { border-color: transparent; background: none; color: var(--ink-2); padding: 7px 9px; }
+.btn.ghost:hover { background: var(--hover); color: var(--ink); }
+.actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.rec-glyph { width: 10px; height: 10px; border-radius: 50%; background: var(--rec); }
+
+/* ------------------------------------------------------------ job */
+.job { text-align: center; padding-top: 12vh; }
+.job .eyebrow { justify-content: center; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rec); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+.timer { font-size: clamp(56px, 11vw, 88px); font-weight: 600; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; line-height: 1; margin: 28px 0 12px; }
+.job-sub { color: var(--ink-2); min-height: 1.5em; }
+.bar { height: 3px; background: var(--hover); border-radius: 3px; overflow: hidden; max-width: 320px; margin: 22px auto 0; }
+.bar > i { display: block; height: 100%; background: var(--ink); border-radius: 3px; transition: width 1s linear; }
+.heard { margin: 48px auto 0; max-width: 520px; text-align: left; }
+.heard h2 { font-size: 12.5px; font-weight: 500; color: var(--ink-3); margin: 0 0 10px; }
+.heard p { margin: 0 0 6px; color: var(--ink-2); line-height: 1.6; }
+.heard p:last-child { color: var(--ink); }
+.job .actions { justify-content: center; margin-top: 44px; }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--line-2); border-top-color: var(--ink); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+.spinner.lg { width: 34px; height: 34px; border-width: 2.5px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.job-line { margin-top: 18px; color: var(--ink-2); font-size: 14px; min-height: 1.5em; overflow-wrap: anywhere; }
+
+.log {
+  margin-top: 28px; text-align: left; font: 12.5px/1.6 var(--mono); color: var(--ink-2);
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px 16px; max-height: 340px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.result { text-align: left; padding-top: 56px; }
+.result-icon { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 18px; }
+.result-icon.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.result-icon.bad { background: var(--rec-soft); color: var(--rec); }
+.result-icon svg { width: 20px; height: 20px; stroke-width: 2.25; }
+.cmd { font: 12.5px var(--mono); color: var(--ink-3); margin-top: 14px; }
+
+/* ------------------------------------------------------------ notes */
+.doc-head { padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.meta { color: var(--ink-3); margin-top: 8px; font-size: 14px; }
+.toolbar { display: flex; align-items: center; gap: 4px; margin-top: 22px; flex-wrap: wrap; }
+.toolbar .grow { flex: 1; }
+
+.prose { font-size: 16.5px; line-height: 1.75; padding-top: 10px; overflow-wrap: break-word; }
+.prose h1 { font-size: 22px; margin: 1.6em 0 .4em; letter-spacing: -0.01em; }
+.prose h2 { font-size: 13px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; margin: 2.4em 0 .7em; }
+.prose h3 { font-size: 16.5px; font-weight: 600; margin: 1.8em 0 .4em; }
+.prose > :first-child { margin-top: 1.4em; }
+.prose p { margin: 0 0 1em; }
+.prose ul, .prose ol { margin: 0 0 1em; padding-left: 1.3em; }
+.prose li > ul, .prose li > ol { margin: .2em 0 0; }
+.prose li { margin: .35em 0; padding-left: .3em; }
+.prose ul > li::marker { color: var(--ink-3); }
+.prose ol > li::marker { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.prose strong { font-weight: 650; }
+.prose em { color: var(--ink-2); }
+.prose a { text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.prose a:hover { text-decoration-color: currentColor; }
+.prose code { font: .88em var(--mono); background: var(--hover); padding: .1em .35em; border-radius: 5px; }
+.prose a.ts {
+  font: 12px var(--mono); text-decoration: none; color: var(--ink-3);
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; margin-left: 4px;
+  vertical-align: 1px; white-space: nowrap;
+}
+.prose a.ts:hover { color: var(--ink); border-color: var(--ink-3); }
+
+.transcript { padding-top: 22px; }
+.tr-row { display: grid; grid-template-columns: 56px 1fr; gap: 12px; padding: 6px 0; }
+.tr-t { font: 12.5px/1.75 var(--mono); color: var(--ink-3); text-decoration: none; }
+a.tr-t:hover { color: var(--ink); }
+.tr-row p { margin: 0; line-height: 1.7; }
+
+.empty {
+  margin-top: 32px; padding: 28px; border: 1px dashed var(--line-2); border-radius: 14px;
+  display: grid; gap: 12px; justify-items: start;
+}
+.empty h2 { margin: 0; font-size: 16px; }
+.empty p { margin: 0; color: var(--ink-2); }
+.warn-line { display: flex; gap: 8px; align-items: center; color: var(--warn); font-size: 13.5px; }
+
+.welcome { padding-top: 15vh; }
+
+/* ------------------------------------------------------------ toast */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px);
+  background: var(--ink); color: var(--panel); padding: 10px 16px; border-radius: 10px;
+  font-size: 14px; box-shadow: var(--shadow); opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s; max-width: calc(100vw - 32px);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ------------------------------------------------------------ mobile */
+.back { display: none; }
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  .side { border-right: 0; }
+  .app[data-pane="main"] .side { display: none; }
+  .app[data-pane="side"] .main { display: none; }
+  .view { padding: 20px 16px 72px; }
+  .back { display: inline-flex; margin: 0 0 18px -8px; }
+  .job > .back { display: flex; width: max-content; }
+  .job { padding-top: 6vh; }
+  .row { grid-template-columns: 1fr; }
+  .toolbar .btn.ghost span { display: none; }
+  .h1 { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app" data-pane="side">
+  <aside class="side" aria-label="Classes">
+    <div class="side-top">
+      <div class="brand">
+        <span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M7 4h7l4 4v12H7z" fill="none" stroke-linejoin="round"/><path d="M10 12h5M10 16h3" stroke-linecap="round"/></svg></span>
+        NoteTaker
+      </div>
+      <a class="btn-new" href="#/new" id="new-btn"><svg class="i"><use href="#i-plus"/></svg>New notes</a>
+      <label class="search-wrap">
+        <span class="visually-hidden">Search classes</span>
+        <svg class="i"><use href="#i-search"/></svg>
+        <input class="search" id="search" type="search" placeholder="Search" autocomplete="off">
+      </label>
+    </div>
+    <div id="notices"></div>
+    <nav class="list" id="list"></nav>
+    <div class="side-foot" id="foot"></div>
+  </aside>
+  <main class="main" id="main" tabindex="-1"></main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19.5h14"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5v3"/></symbol>
+  <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="12" rx="2"/><path d="M9 20h6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8.5v4.5M12 16.5v.01"/><path d="M10.3 4.2 3 17a2 2 0 0 0 1.7 3h14.6a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/></symbol>
+</svg>
+
+<script>
+"use strict";
+
+/* ================================================================ state */
+const S = {
+  sessions: [], pendingCount: 0, ollama: true, job: null, languages: [],
+  classMinutes: [30, 45, 50, 60, 90], defaultMinutes: 60, loaded: false,
+  polledAt: 0,
+};
+const detailCache = new Map();
+let detailsOpen = false;
+let followJob = null;          // id of the job whose result should be shown
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("nt." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("nt." + k, JSON.stringify(v)); } catch {} },
+};
+const form = {
+  mode: store.get("mode", "class"),
+  title: "",
+  minutes: store.get("minutes", null),
+  later: false,
+  lang: "auto",
+  link: "", vtitle: "", from: "", to: "",
+};
+
+/* ================================================================ helpers */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const icon = (name) => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-NoteTaker": "1" },
+    body: JSON.stringify(body),
+  };
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `request failed (${res.status})`);
+  return data;
+}
+
+let toastTimer;
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+function clock(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+function length(sec) {
+  if (!sec) return "";
+  const m = Math.round(sec / 60);
+  if (m < 1) return "under a minute";
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+}
+function parseDate(iso) { const d = new Date(iso); return isNaN(d) ? null : d; }
+function dayKey(d) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
+function dayLabel(d) {
+  const today = new Date(), y = new Date(); y.setDate(today.getDate() - 1);
+  if (dayKey(d) === dayKey(today)) return "Today";
+  if (dayKey(d) === dayKey(y)) return "Yesterday";
+  const opts = { weekday: "short", day: "numeric", month: "short" };
+  if (d.getFullYear() !== today.getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString(undefined, opts);
+}
+const time = (d) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const sourceLabel = (k) => ({ mic: "In class", system: "Online", video: "Video" }[k] || "Recording");
+const langName = (code) => (S.languages.find((l) => l.code === code) || {}).name || (code ? code.toUpperCase() : "");
+const busy = () => S.job && S.job.status === "running";
+const placeholderTitles = new Set(["class", "lecture", "untitled", "video"]);
+function recentSubjects() {
+  const seen = [];
+  for (const s of S.sessions) {
+    const t = (s.title || "").trim();
+    if (s.source === "video" || !t || placeholderTitles.has(t.toLowerCase()) || seen.includes(t)) continue;
+    seen.push(t);
+    if (seen.length >= 6) break;
+  }
+  return seen;
+}
+
+/* ================================================================ markdown */
+// Only the shapes NoteTaker writes: headings, lists, paragraphs, bold,
+// italics, code and links. Everything is escaped before it is formatted.
+function inline(text) {
+  let s = esc(text);
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => {
+    const ts = /^\d{1,2}(:\d{2}){1,2}$/.test(label);
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer"${ts ? ' class="ts" title="Play from here"' : ""}>${label}</a>`;
+  });
+  s = s.replace(/\(\s*(<a [^>]*class="ts"[^>]*>[^<]*<\/a>)\s*\)/g, "$1");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*\w])\*(?!\s)([^*]+?)\*(?!\w)/g, "$1<em>$2</em>");
+  return s;
+}
+
+function markdown(src) {
+  const lines = String(src || "").replace(/\r/g, "").split("\n");
+  // The page shows the title and date itself, so drop the notes' own header.
+  let i = 0;
+  while (i < lines.length && !lines[i].trim()) i++;
+  if (/^#\s/.test(lines[i] || "")) { i++; while (i < lines.length && !lines[i].trim()) i++; }
+  if (/^\*[^*].*\*$/.test((lines[i] || "").trim())) i++;
+
+  let html = "", para = [];
+  const stack = []; // open lists: {type, indent}
+  const flushPara = () => { if (para.length) { html += `<p>${inline(para.join(" "))}</p>`; para = []; } };
+  const closeLists = (indent = -1) => {
+    while (stack.length && stack[stack.length - 1].indent > indent) html += `</li></${stack.pop().type}>`;
+  };
+
+  for (; i < lines.length; i++) {
+    const raw = lines[i];
+    if (!raw.trim()) { flushPara(); continue; }
+    const h = raw.match(/^(#{1,4})\s+(.*)$/);
+    const li = raw.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (h) {
+      flushPara(); closeLists();
+      const level = Math.min(h[1].length, 3);
+      html += `<h${level}>${inline(h[2])}</h${level}>`;
+    } else if (li) {
+      flushPara();
+      const indent = li[1].replace(/\t/g, "  ").length;
+      const type = /\d/.test(li[2]) ? "ol" : "ul";
+      const top = stack[stack.length - 1];
+      if (!top || indent > top.indent) {
+        html += `<${type}><li>`;
+        stack.push({ type, indent });
+      } else {
+        closeLists(indent);
+        const cur = stack[stack.length - 1];
+        if (cur && cur.indent === indent && cur.type === type) html += "</li><li>";
+        else { if (cur && cur.indent === indent) html += `</li></${stack.pop().type}>`; html += `<${type}><li>`; stack.push({ type, indent }); }
+      }
+      html += inline(li[3]);
+    } else if (stack.length && /^\s+/.test(raw)) {
+      html += " " + inline(raw.trim());
+    } else {
+      closeLists();
+      para.push(raw.trim());
+    }
+  }
+  flushPara(); closeLists();
+  return html;
+}
+
+/* ================================================================ routing */
+function route() {
+  const h = location.hash.replace(/^#\/?/, "");
+  if (h.startsWith("s/")) return { name: "session", id: decodeURIComponent(h.slice(2)) };
+  if (h === "new") return { name: "new" };
+  if (h === "job") return { name: "job" };
+  return { name: "home" };
+}
+function go(hash) { if (location.hash !== hash) location.hash = hash; else render(); }
+
+/* ================================================================ sidebar */
+function renderSide() {
+  const r = route();
+  $("#new-btn").setAttribute("aria-current", r.name === "new" ? "page" : "false");
+
+  // Notices: a running job first, then classes waiting for notes.
+  let notices = "";
+  const job = S.job;
+  if (job && job.status === "running") {
+    const rec = job.kind === "record" && !job.stopping;
+    const label = job.kind === "record"
+      ? (job.stopping ? "Finishing up" : (job.later ? "Recording sound" : "Recording"))
+      : job.kind === "video" ? "Making notes from video" : job.kind === "check" ? "Checking" : "Writing notes";
+    notices += `<a class="notice running${rec ? "" : " busy"}" href="#/job">
+      ${rec ? '<span class="status-dot"></span>' : '<span class="spinner" style="width:14px;height:14px"></span>'}
+      <span class="grow"><b>${esc(label)}</b> · ${esc(job.label)}</span>
+      ${rec ? `<span class="act" data-tick="side">${clock(jobElapsed())}</span>` : ""}
+    </a>`;
+  } else if (S.pendingCount) {
+    notices += `<button class="notice pending" data-action="catchup">
+      <span class="grow"><b>${S.pendingCount}</b> ${S.pendingCount === 1 ? "class needs" : "classes need"} notes</span>
+      <span class="act">Write up</span>
+    </button>`;
+  }
+  $("#notices").innerHTML = notices;
+
+  // The list, grouped by day.
+  const q = $("#search").value.trim().toLowerCase();
+  const items = S.sessions.filter((s) => !q || s.title.toLowerCase().includes(q));
+  let html = "", lastDay = null;
+  for (const s of items) {
+    const d = parseDate(s.started);
+    const label = d ? dayLabel(d) : "Earlier";
+    if (label !== lastDay) {
+      if (lastDay !== null) html += "</div>";
+      html += `<div class="group"><div class="group-label">${esc(label)}</div>`;
+      lastDay = label;
+    }
+    const meta = [d ? time(d) : "", length(s.duration), sourceLabel(s.source)].filter(Boolean).join(" · ");
+    const current = r.name === "session" && r.id === s.id;
+    html += `<a class="item" href="#/s/${encodeURIComponent(s.id)}"${current ? ' aria-current="page"' : ""}>
+      <span class="item-title">${esc(s.title)}</span>
+      ${s.pending ? '<span class="item-flag" title="Needs notes"></span>' : ""}
+      <span class="item-meta">${esc(meta)}</span>
+    </a>`;
+  }
+  if (lastDay !== null) html += "</div>";
+  if (!items.length) {
+    html = `<div class="list-empty">${q ? "No classes match." : (S.loaded ? "Your classes will appear here." : "")}</div>`;
+  }
+  $("#list").innerHTML = html;
+
+  $("#foot").innerHTML = S.ollama
+    ? `<span class="dot"></span><span class="grow">Ready · runs offline</span><button class="link-btn" data-action="check">Check setup</button>`
+    : `<span class="dot off"></span><span class="grow" title="Start Ollama so notes can be written">Notes writer is off</span><button class="link-btn" data-action="check">Check setup</button>`;
+}
+
+/* ================================================================ main views */
+function render() {
+  if ($("#new-form")) readForm();  // keep what was typed across re-renders
+  const r = route();
+  const app = $("#app");
+  app.dataset.pane = r.name === "home" ? "side" : "main";
+  renderSide();
+  const main = $("#main");
+  if (r.name === "session") return renderSession(main, r.id);
+  if (r.name === "job") return renderJob(main);
+  if (r.name === "new") return renderNew(main);
+  // Home on a wide screen: what is running, or a fresh page.
+  if (busy()) return renderJob(main);
+  return renderNew(main);
+}
+
+const backBtn = () => `<a class="btn ghost back" href="#/">${icon("back")}Classes</a>`;
+
+/* ---------------------------------------------------------------- new */
+function renderNew(main) {
+  if (busy()) {
+    main.innerHTML = `<section class="view">${backBtn()}
+      <h1 class="h1">New notes</h1>
+      <div class="empty"><h2>Something is already running</h2>
+      <p>Only one thing runs at a time, so the laptop stays quick.</p>
+      <a class="btn" href="#/job">See what is running</a></div></section>`;
+    return;
+  }
+  const first = !S.sessions.length && S.loaded;
+  const m = form.mode;
+  const tabs = [["class", "In class", "mic"], ["online", "Online", "screen"], ["video", "Video", "play"]]
+    .map(([k, l, ic]) => `<button type="button" role="tab" aria-selected="${m === k}" data-mode="${k}">${icon(ic)}${l}</button>`).join("");
+
+  let body = "";
+  if (m === "video") {
+    body = `
+      <div class="field">
+        <label class="label" for="f-link">Link or file</label>
+        <input class="input big" id="f-link" placeholder="https://youtube.com/watch?v=…" value="${esc(form.link)}" autocomplete="off" spellcheck="false">
+        <p class="hint">YouTube and most video sites work, and so do files like .mp4 or .mp3 — paste the file's full path.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="f-vtitle">Name <span class="muted" style="font-weight:400">· optional</span></label>
+        <input class="input" id="f-vtitle" placeholder="Uses the video's own title" value="${esc(form.vtitle)}" autocomplete="off">
+      </div>
+      <details class="more"${form.from || form.to ? " open" : ""}>
+        <summary>${icon("chev")}Only part of the video</summary>
+        <div class="more-body"><div class="row">
+          <div class="field"><label class="label" for="f-from">From</label><input class="input" id="f-from" placeholder="0:00" value="${esc(form.from)}" inputmode="numeric"></div>
+          <div class="field"><label class="label" for="f-to">To</label><input class="input" id="f-to" placeholder="the end" value="${esc(form.to)}" inputmode="numeric"></div>
+        </div><p class="hint">Skip an intro or the adverts. Times in the notes still match the full video.</p></div>
+      </details>
+      ${toggle("f-later", "Download now, write notes later", "Saves the sound. Write it up when you have time.")}
+      <div class="actions"><button class="btn primary lg" type="submit">Make notes</button></div>`;
+  } else {
+    const subjects = recentSubjects();
+    const minutes = form.minutes ?? S.defaultMinutes;
+    const lengths = [...S.classMinutes.map((n) => [n, `${n} min`]), [0, "No limit"]]
+      .map(([n, l]) => `<button type="button" class="chip" role="radio" aria-checked="${minutes === n}" data-minutes="${n}">${l}</button>`).join("");
+    const langs = [`<option value="auto">Detect automatically</option>`,
+      ...S.languages.map((l) => `<option value="${esc(l.code)}"${form.lang === l.code ? " selected" : ""}>${esc(l.name)}</option>`)].join("");
+    body = `
+      <div class="field">
+        <label class="label" for="f-title">Subject</label>
+        <input class="input big" id="f-title" placeholder="${subjects[0] ? esc(subjects[0]) : "e.g. Physics"}" value="${esc(form.title)}" autocomplete="off">
+        ${subjects.length ? `<div class="chips">${subjects.map((s) => `<button type="button" class="chip" data-subject="${esc(s)}" aria-pressed="${form.title === s}">${esc(s)}</button>`).join("")}</div>` : ""}
+      </div>
+      <div class="field">
+        <span class="label" id="len-label">Length</span>
+        <div class="chips" role="radiogroup" aria-labelledby="len-label">${lengths}</div>
+        <p class="hint">${minutes ? "Stops by itself 2 minutes after the class ends, in case it runs over." : "Keeps recording until you press Stop."}</p>
+      </div>
+      ${toggle("f-later", "Write the notes later", "Records the sound only, so the battery lasts a school day.")}
+      <details class="more"${form.lang !== "auto" ? " open" : ""}>
+        <summary>${icon("chev")}Language</summary>
+        <div class="more-body"><select class="input" id="f-lang" aria-label="Language spoken in class">${langs}</select></div>
+      </details>
+      <div class="actions">
+        <button class="btn primary lg" type="submit"><span class="rec-glyph"></span>Start recording</button>
+        ${m === "online" ? '<p class="hint">Records what this computer plays — Zoom, Teams, YouTube.</p>' : ""}
+      </div>`;
+  }
+
+  main.innerHTML = `<section class="view${first ? " welcome" : ""}">${backBtn()}
+    <h1 class="h1">${first ? "Record a class, get the key ideas." : "New notes"}</h1>
+    <p class="lede">Everything runs on this computer. Nothing is uploaded.</p>
+    <form class="form" id="new-form" novalidate>
+      <div class="seg" role="tablist" aria-label="What to make notes from">${tabs}</div>
+      ${body}
+    </form></section>`;
+  $("#f-later").checked = form.later;
+}
+
+function toggle(id, title, sub) {
+  return `<label class="toggle" for="${id}"><input type="checkbox" id="${id}"><span class="switch"></span>
+    <span class="toggle-text"><b>${esc(title)}</b><span>${esc(sub)}</span></span></label>`;
+}
+
+function readForm() {
+  const v = (id) => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  if (v("f-title") !== undefined) form.title = v("f-title");
+  if (v("f-link") !== undefined) form.link = v("f-link");
+  if (v("f-vtitle") !== undefined) form.vtitle = v("f-vtitle");
+  if (v("f-from") !== undefined) form.from = v("f-from");
+  if (v("f-to") !== undefined) form.to = v("f-to");
+  if (v("f-lang") !== undefined) form.lang = v("f-lang");
+  const later = document.getElementById("f-later");
+  if (later) form.later = later.checked;
+}
+
+async function submitNew() {
+  readForm();
+  let req;
+  if (form.mode === "video") {
+    if (!form.link.trim()) { toast("Paste a link or a file path first."); $("#f-link").focus(); return; }
+    req = { kind: "video", source: form.link.trim(), title: form.vtitle, start: form.from, end: form.to, later: form.later };
+  } else {
+    const title = form.title.trim() || recentSubjects()[0] || "";
+    req = {
+      kind: "record", source: form.mode === "online" ? "system" : "mic",
+      title, minutes: form.minutes ?? S.defaultMinutes, later: form.later, lang: form.lang,
+    };
+  }
+  await startJob(req);
+  if (S.job && form.mode === "video") { form.link = ""; form.vtitle = ""; form.from = ""; form.to = ""; }
+}
+
+async function startJob(req) {
+  try {
+    const { job } = await api("/api/jobs", req);
+    S.job = job; S.polledAt = Date.now();
+    followJob = job.id; detailsOpen = false;
+    go("#/job");
+    schedulePoll(1000);
+  } catch (e) { toast(e.message); }
+}
+
+/* ---------------------------------------------------------------- job */
+function jobElapsed() {
+  if (!S.job) return 0;
+  return S.job.elapsed + (S.job.status === "running" ? (Date.now() - S.polledAt) / 1000 : 0);
+}
+
+function lastLine(job) {
+  const lines = (job.log || []).filter((l) => !/^\s*$/.test(l));
+  return lines.length ? lines[lines.length - 1].trim() : "";
+}
+
+function renderJob(main) {
+  const job = S.job;
+  if (!job) {
+    main.innerHTML = `<section class="view">${backBtn()}<div class="empty"><h2>Nothing is running</h2><a class="btn" href="#/new">New notes</a></div></section>`;
+    return;
+  }
+  const logBlock = job.log.length ? `<details class="more" style="margin-top:28px"${detailsOpen ? " open" : ""} id="job-details">
+      <summary>${icon("chev")}Details</summary><div class="log" id="job-log">${esc(job.log.join("\n"))}</div></details>` : "";
+
+  if (job.status !== "running") return renderResult(main, job);
+
+  if (job.kind === "record" && !job.stopping && !(job.limit && jobElapsed() >= job.limit)) {
+    const e = jobElapsed();
+    const pct = job.limit ? Math.min(100, (e / job.limit) * 100) : 0;
+    const heard = (job.heard || []).map((t) => `<p>${esc(t)}</p>`).join("");
+    main.innerHTML = `<section class="view job">${backBtn()}
+      <div class="eyebrow"><span class="status-dot"></span>${job.later ? "Recording sound" : "Recording"} · ${esc(sourceLabel(job.source))}</div>
+      <h1 class="h1">${esc(job.label)}</h1>
+      <div class="timer" data-tick="timer">${clock(e)}</div>
+      <div class="job-sub" data-tick="sub">${recordSub(job, e)}</div>
+      ${job.limit ? `<div class="bar"><i data-tick="bar" style="width:${pct}%"></i></div>` : ""}
+      ${!job.later ? `<div class="heard"><h2>Heard so far</h2>${heard || '<p class="muted">Listening…</p>'}</div>` : ""}
+      <div class="actions"><button class="btn danger lg" data-action="stop">Stop recording</button></div>
+    </section>`;
+    return;
+  }
+
+  const title = job.kind === "record" ? "Finishing up"
+    : job.kind === "video" ? "Making notes from the video"
+    : job.kind === "catchup" ? "Writing up your classes"
+    : job.kind === "check" ? "Checking this computer" : "Writing notes";
+  const sub = job.kind === "record"
+    ? (job.later ? "Saving the recording." : "Transcribing the last part, then writing your notes. You can close the lid when it's done.")
+    : "This takes a while. You can keep using the computer.";
+  main.innerHTML = `<section class="view job">${backBtn()}
+    <span class="spinner lg"></span>
+    <h1 class="h1" style="margin-top:24px">${esc(title)}</h1>
+    <p class="lede">${esc(job.label)} · ${esc(sub)}</p>
+    <div class="job-line">${esc(lastLine(job))}</div>
+    ${logBlock}
+    ${job.kind !== "record" && !job.stopping ? '<div class="actions"><button class="btn" data-action="stop">Cancel</button></div>' : ""}
+  </section>`;
+  const log = $("#job-log"); if (log) log.scrollTop = log.scrollHeight;
+}
+
+function recordSub(job, e) {
+  if (!job.limit) return "Press Stop when the class ends.";
+  const left = job.limit - e;
+  return left > 60 ? `${Math.ceil(left / 60)} min left · stops by itself` : "Stopping soon";
+}
+
+function renderResult(main, job) {
+  const ok = job.status === "done";
+  const cancelled = job.status === "cancelled";
+  const online = job.kind === "record" && job.source === "system";
+  let title, text;
+  if (cancelled) { title = "Stopped"; text = "Nothing was lost. Anything already saved is still there."; }
+  else if (ok) {
+    title = job.kind === "check" ? "Checked" : job.kind === "catchup" ? "All written up" : "Done";
+    text = job.kind === "check" ? "Here is what NoteTaker found." : lastLine(job);
+  } else {
+    title = "That did not work";
+    text = "Here is what NoteTaker said. Your recordings are safe.";
+  }
+  main.innerHTML = `<section class="view result">${backBtn()}
+    <div class="result-icon ${ok || cancelled ? "ok" : "bad"}">${icon(ok || cancelled ? "check" : "x")}</div>
+    <h1 class="h1">${esc(title)}</h1>
+    <p class="lede">${esc(text)}</p>
+    ${!ok && online ? '<p class="hint" style="margin-top:12px">Online classes need a one-time setup. In a terminal, run <code>notes setup-online</code>.</p>' : ""}
+    ${job.log.length ? `<div class="log">${esc(job.log.join("\n"))}</div>` : ""}
+    <div class="actions" style="margin-top:28px">
+      ${job.session ? `<a class="btn primary" href="#/s/${encodeURIComponent(job.session)}">Open notes</a>` : ""}
+      <a class="btn" href="#/new">New notes</a>
+    </div>
+    <p class="cmd">${esc(job.command)}</p>
+  </section>`;
+}
+
+function tick() {
+  if (!busy() || S.job.kind !== "record") return;
+  const e = jobElapsed();
+  document.querySelectorAll("[data-tick]").forEach((el) => {
+    const k = el.dataset.tick;
+    if (k === "timer" || k === "side") el.textContent = clock(e);
+    else if (k === "sub") el.textContent = recordSub(S.job, e);
+    else if (k === "bar" && S.job.limit) el.style.width = Math.min(100, (e / S.job.limit) * 100) + "%";
+  });
+}
+
+/* ---------------------------------------------------------------- session */
+async function renderSession(main, id, tab) {
+  let s = detailCache.get(id);
+  if (!s) {
+    main.innerHTML = `<section class="view">${backBtn()}<span class="spinner"></span></section>`;
+    try { s = await api(`/api/sessions/${encodeURIComponent(id)}`); detailCache.set(id, s); }
+    catch (e) { main.innerHTML = `<section class="view">${backBtn()}<div class="empty"><h2>Not found</h2><p>${esc(e.message)}</p></div></section>`; return; }
+    if (route().name !== "session" || route().id !== id) return;
+  }
+  tab = tab || "notes";
+  const d = parseDate(s.started);
+  const eyebrow = [sourceLabel(s.source), langName(s.language)].filter(Boolean).join(" · ");
+  const meta = [d ? `${dayLabel(d)}, ${time(d)}` : "", length(s.duration)].filter(Boolean).join(" · ");
+  const q = encodeURIComponent(id);
+
+  const tools = `<div class="toolbar">
+      <div class="seg small" role="tablist">
+        <button role="tab" data-tab="notes" aria-selected="${tab === "notes"}">Notes</button>
+        <button role="tab" data-tab="transcript" aria-selected="${tab === "transcript"}"${s.hasTranscript ? "" : " disabled"}>Transcript</button>
+      </div>
+      <span class="grow"></span>
+      ${s.notes ? `<button class="btn ghost" data-action="copy" title="Copy notes" aria-label="Copy notes">${icon("copy")}<span>Copy</span></button>
+      <a class="btn ghost" href="/api/sessions/${q}/download?kind=md" download title="Download as a Markdown file" aria-label="Download notes">${icon("download")}<span>Download</span></a>` : ""}
+      ${s.notes && s.hasTranscript ? `<button class="btn ghost" data-action="rewrite" title="Write the notes again" aria-label="Write the notes again"${busy() ? " disabled" : ""}>${icon("redo")}<span>Rewrite</span></button>` : ""}
+    </div>`;
+
+  main.innerHTML = `<article class="view">${backBtn()}
+    <header class="doc-head">
+      <div class="eyebrow">${esc(eyebrow)}${s.link ? ` · <a href="${esc(s.link)}" target="_blank" rel="noopener noreferrer">Watch</a>` : ""}</div>
+      <h1 class="h1">${esc(s.title)}</h1>
+      <div class="meta">${esc(meta)}</div>
+      ${tools}
+    </header>
+    <div id="doc-body"></div>
+  </article>`;
+  main.dataset.session = id;
+
+  const body = $("#doc-body");
+  if (tab === "transcript") {
+    body.innerHTML = `<div class="transcript"><span class="spinner"></span></div>`;
+    try {
+      const rows = await api(`/api/sessions/${q}/transcript`);
+      body.innerHTML = `<div class="transcript">${rows.map((r) => `<div class="tr-row"><span class="tr-t">${clock(r.start)}</span><p>${esc(r.text)}</p></div>`).join("") || '<p class="muted">The transcript is empty.</p>'}</div>`;
+    } catch (e) { body.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+    return;
+  }
+  if (s.notes) { body.innerHTML = `<div class="prose">${markdown(s.notes)}</div>`; return; }
+  body.innerHTML = emptyNotes(s);
+}
+
+function emptyNotes(s) {
+  const running = busy() && S.job.kind !== "check";
+  if (running && (S.job.session === s.id || S.job.kind === "catchup")) {
+    return `<div class="empty"><span class="spinner"></span><h2>Writing these notes now</h2><p>They will appear here when they are ready.</p></div>`;
+  }
+  let why;
+  if (!s.complete) why = "This recording was interrupted, but what was saved can still be written up.";
+  else if (s.partial) why = "Transcription could not keep up during class. NoteTaker will redo it from the full recording.";
+  else if (!s.hasTranscript && s.hasAudio) why = "The sound is saved. Nothing has been transcribed yet.";
+  else if (s.hasTranscript) why = "The transcript is ready. The notes have not been written yet.";
+  else return `<div class="empty"><h2>Nothing to write up</h2><p>This class has no sound and no transcript.</p></div>`;
+  const direct = s.hasTranscript && !s.partial;
+  return `<div class="empty">
+    <h2>No notes yet</h2><p>${esc(why)}</p>
+    ${!S.ollama ? `<div class="warn-line">${icon("alert")}Start Ollama first — it writes the notes.</div>` : ""}
+    <button class="btn primary" data-action="${direct ? "write" : "catchup"}"${busy() ? " disabled" : ""}>Write notes now</button>
+    ${!direct && S.pendingCount > 1 ? `<p class="hint">This writes up all ${S.pendingCount} waiting classes, oldest first.</p>` : ""}
+    ${busy() ? '<p class="hint">Something else is running. Try again when it finishes.</p>' : ""}
+  </div>`;
+}
+
+/* ================================================================ polling */
+let pollTimer;
+function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
+
+async function poll() {
+  try {
+    const prev = S.job, first = !S.loaded;
+    const data = await api("/api/state");
+    Object.assign(S, data, { loaded: true, polledAt: Date.now() });
+    if (first) { render(); }
+    else {
+      if (onJobChange(prev, S.job)) return schedulePoll(busy() ? 1000 : 6000);
+      renderSide();
+      const r = route();
+      const onJob = r.name === "job" || (r.name === "home" && busy());
+      if (onJob && jobKey(prev) !== jobKey(S.job)) renderJob($("#main"));
+      else if (r.name === "new" && !$("#new-form") && !busy()) renderNew($("#main"));
+    }
+  } catch (e) {
+    $("#foot").innerHTML = `<span class="dot off"></span><span class="grow">NoteTaker is not running. Start it with <code>notes ui</code>.</span>`;
+  }
+  schedulePoll(busy() ? 1000 : 6000);
+}
+
+// What the job view shows, without the clock: re-render only when it changes,
+// so a log being read does not jump back to the top every second.
+function jobKey(j) {
+  return j ? [j.id, j.status, j.stopping, j.session, j.log.length, j.log[j.log.length - 1], (j.heard || []).join("|")].join("\u0000") : "";
+}
+
+function onJobChange(prev, job) {
+  const wasRunning = prev && prev.status === "running";
+  const finished = wasRunning && job && job.id === prev.id && job.status !== "running";
+  if (!finished) return false;
+  // Whatever just finished may have changed any class.
+  detailCache.clear();
+  const r = route();
+  if (job.status === "done" && job.session && job.kind !== "summarize") {
+    toast("Your notes are ready");
+    if (followJob === job.id && (r.name === "job" || r.name === "home")) { go(`#/s/${encodeURIComponent(job.session)}`); return true; }
+  } else if (job.status === "done" && job.kind === "summarize") {
+    toast("Notes written");
+    if (r.name === "job" && followJob === job.id) { go(`#/s/${encodeURIComponent(job.session)}`); return true; }
+  } else if (job.status === "failed") {
+    if (r.name !== "job") toast("Something did not work. Open it to see why.");
+  }
+  render();
+  return true;
+}
+
+/* ================================================================ events */
+document.addEventListener("click", async (ev) => {
+  const t = ev.target.closest("[data-mode],[data-minutes],[data-subject],[data-action],[data-tab]");
+  if (!t) return;
+  if (t.dataset.mode) { readForm(); form.mode = t.dataset.mode; store.set("mode", form.mode); renderNew($("#main")); return; }
+  if (t.dataset.minutes !== undefined) {
+    readForm(); form.minutes = Number(t.dataset.minutes); store.set("minutes", form.minutes); renderNew($("#main")); return;
+  }
+  if (t.dataset.subject !== undefined) { readForm(); form.title = t.dataset.subject; renderNew($("#main")); return; }
+  if (t.dataset.tab) { const r = route(); if (r.name === "session") renderSession($("#main"), r.id, t.dataset.tab); return; }
+
+  const a = t.dataset.action;
+  const r = route();
+  if (a === "stop") {
+    if (S.job.kind === "record" || confirm("Cancel this? Anything already saved is kept.")) {
+      try { const { job } = await api("/api/job/stop", {}); S.job = job; S.polledAt = Date.now(); renderJob($("#main")); renderSide(); }
+      catch (e) { toast(e.message); }
+    }
+  } else if (a === "catchup") {
+    startJob({ kind: "catchup" });
+  } else if (a === "check") {
+    startJob({ kind: "check" });
+  } else if (a === "write" && r.name === "session") {
+    startJob({ kind: "summarize", session: r.id });
+  } else if (a === "rewrite" && r.name === "session") {
+    if (confirm("Write these notes again? The current notes will be replaced.")) startJob({ kind: "summarize", session: r.id, rerun: true });
+  } else if (a === "copy" && r.name === "session") {
+    const s = detailCache.get(r.id);
+    try { await navigator.clipboard.writeText(s.notes); toast("Notes copied"); } catch { toast("Could not copy. Use Download instead."); }
+  }
+});
+
+document.addEventListener("toggle", (ev) => { if (ev.target.id === "job-details") detailsOpen = ev.target.open; }, true);
+document.addEventListener("submit", (ev) => { if (ev.target.id === "new-form") { ev.preventDefault(); submitNew(); } });
+document.addEventListener("input", (ev) => { if (ev.target.id === "f-title") { form.title = ev.target.value; document.querySelectorAll("[data-subject]").forEach((c) => c.setAttribute("aria-pressed", c.dataset.subject === form.title)); } });
+$("#search").addEventListener("input", renderSide);
+window.addEventListener("hashchange", () => { render(); $("#main").scrollTop = 0; });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+setInterval(tick, 500);
+
+render();
+poll();
+</script>
+</body>
+</html>

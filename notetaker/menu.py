@@ -500,6 +500,8 @@ def options() -> list[Option]:
         Option("9", "Check that everything works", "microphone, notes writer", _check),
         Option("10", "Make notes from a video", "YouTube link or a video file",
                _from_video),
+        Option("11", "Open the NoteTaker window", "buttons instead of numbers",
+               lambda: _cli("ui")),
     ]
 
 

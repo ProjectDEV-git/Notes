@@ -63,6 +63,7 @@ notes            # opens a menu: pick a number, press Enter
   8. Record with more options — language, length, reading level
   9. Check that everything works — microphone, notes writer
   10. Make notes from a video — YouTube link or a video file
+  11. Open the NoteTaker window — buttons instead of numbers
 ```
 
 It asks which subject, and how long the class is. Enter is a valid answer to
@@ -78,8 +79,24 @@ notes video LINK # make notes from a YouTube link or a video file
 notes last       # show the notes from your last class
 notes all        # list every class
 notes check      # confirm your microphone and notes writer work
+notes ui         # open the NoteTaker window in your browser
 notes update     # update NoteTaker and Python dependencies safely
 ```
+
+### The NoteTaker window
+
+Prefer buttons to numbers? `notes ui` (or **11** in the menu) opens NoteTaker
+in your web browser: every class in a list on the left, the notes on the
+right, and one page to start a recording or paste a video link. While a class
+records it shows a large timer, how long is left, and the last few things it
+heard. **Stop recording** finishes the same careful way as Ctrl-C, so the
+notes are still written.
+
+It is the same app underneath: every button runs the command you would type,
+and the window shows that command when it finishes. It only listens on this
+computer (`127.0.0.1`) and needs no internet. Keep the terminal it started
+from open while you use it. Press Ctrl-C there to close NoteTaker: a class
+that is still recording is stopped and saved properly first.
 
 The `notes` launcher checks for updates automatically when it starts. It skips
 the check if the checkout has local changes, and continues opening the app if
@@ -179,6 +196,7 @@ notes summarize physics --rerun --level university   # denser wording
 ```bash
 notetaker devices                      # which mic / system-audio sources exist
 notetaker menu                         # the numbered menu
+notetaker ui [--port N] [--no-browser] # the same app as a window in your browser
 notetaker check                        # verify audio devices and Ollama
 notetaker update                       # update code and Python dependencies
 notetaker record [--source mic|system] [--title T] [--live-notes] [--lang auto|en|th]
