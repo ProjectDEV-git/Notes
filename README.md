@@ -77,6 +77,7 @@ notes online     # record an online class (Zoom/Teams/YouTube)
 notes video LINK # make notes from a YouTube link or a video file
 notes last       # show the notes from your last class
 notes all        # list every class
+notes search X   # find where X was said, in every class (with video links)
 notes check      # confirm your microphone and notes writer work
 notes update     # update NoteTaker and Python dependencies safely
 ```
@@ -193,6 +194,7 @@ notetaker video <link-or-file> [--title T] [--lang L] [--later] [--hq]
                [--from 2:30] [--to 45:00]  # only that part of the video
 notetaker list                         # past recordings
 notetaker show <id> [--transcript]
+notetaker search <words> [-n 5]        # where was this said? every class, with times
 notetaker summarize <id> [--rerun] [--hq] [--level school|university]
 notetaker export <id> [--md|--txt] [-o FILE]
 notetaker lang list|add|edit|remove    # languages your notes are written in

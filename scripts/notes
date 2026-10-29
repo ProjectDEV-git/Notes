@@ -10,6 +10,7 @@
 #   notes catchup    write notes for every class that does not have them
 #   notes last       show the notes from the most recent lecture
 #   notes all        list every lecture
+#   notes search X   find where X was said, across every class
 #   notes check      confirm the microphone and notes writer work
 #   notes setup-online  guided one-time setup for recording online classes
 #   notes update     update NoteTaker safely from its Git repository
@@ -129,6 +130,10 @@ case "${1-}" in
     all|ls|list)
         run list
         ;;
+    search|find)
+        shift
+        run search "$@"
+        ;;
     show|open)
         shift
         run show "$@"
@@ -156,6 +161,7 @@ notes video LINK make notes from a YouTube link or a video/audio file
 notes setup-online  one-time setup so online classes can be recorded
 notes last       show the notes from your last class
 notes all        list every class
+notes search X   find where X was said, in every class
 notes check      confirm the microphone and notes writer work
 notes update     update NoteTaker safely from its Git repository
 notes lang       add or list note languages

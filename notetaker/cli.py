@@ -870,6 +870,53 @@ def cmd_catchup(args: argparse.Namespace) -> int:
     return 0 if not failed else 1
 
 
+def cmd_search(args: argparse.Namespace) -> int:
+    """Where was this said? Every class, with times (and links for videos)."""
+    from . import search, timestamps, video
+
+    try:
+        from rich.markup import escape
+    except ImportError:  # pragma: no cover - rich is a listed dependency
+        def escape(text: str) -> str:
+            return text
+
+    query = " ".join(args.query).strip()
+    wanted = search.terms(query)
+    if not wanted:
+        return fail("type what to look for, for example:  notes search photosynthesis")
+    results = search.search(query)
+    if not results:
+        echo(f"Nothing found for [bold]{escape(query)}[/bold].")
+        echo("[dim]Try fewer words, or another spelling. Every word typed must appear.[/dim]")
+        return 1
+
+    total = sum(len(r.hits) for r in results)
+    echo(f"[bold]{escape(query)}[/bold]: {total} mention(s) in {len(results)} class(es)\n")
+    for found in results:
+        session = found.session
+        when = session.started_at.replace("T", " ")[:16]
+        echo(f"[bold]{escape(session.title)}[/bold] [dim]{when} · {session.id}[/dim]")
+        link, offset = None, 0.0
+        if session.source_kind == config.SOURCE_VIDEO:
+            meta = video.load_meta(session.directory)
+            link, offset = video.link_for(meta), float(meta.get("offset") or 0)
+        for hit in found.hits[: args.limit]:
+            at = hit.start + offset
+            label = timestamps.format_time(at)
+            line = escape(search.snippet(hit.text, wanted))
+            echo(f"  [cyan]{label:>7}[/cyan]  {line}")
+            if link:
+                echo(f"           [dim]{link(max(at - timestamps.LEAD_IN_SECONDS, 0))}[/dim]")
+        hidden = len(found.hits) - args.limit
+        if hidden > 0:
+            echo(f"  [dim]… and {hidden} more. See them all with:  "
+                 f"notes show {session.id} --transcript[/dim]")
+        if not found.hits and found.in_notes:
+            echo("  [dim]in the notes[/dim]")
+        echo()
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     sessions = store.list_sessions(limit=args.limit)
     if not sessions:
@@ -1246,6 +1293,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     _add_notes_lang(catchup)
 
+    search_cmd = subparsers.add_parser(
+        "search", help="find where something was said, across every class"
+    )
+    search_cmd.add_argument("query", nargs="+", help="words to look for")
+    search_cmd.add_argument(
+        "--limit", "-n", type=positive_int, default=5,
+        help="mentions to show per class (default 5)",
+    )
+
     show = subparsers.add_parser("show", help="show notes for a recording")
     show.add_argument("session", help="session id or part of the title")
     show.add_argument("--transcript", action="store_true", help="show the transcript instead")
@@ -1299,6 +1355,7 @@ COMMANDS = {
     "catchup": cmd_catchup,
     "video": cmd_video,
     "list": cmd_list,
+    "search": cmd_search,
     "show": cmd_show,
     "summarize": cmd_summarize,
     "export": cmd_export,
