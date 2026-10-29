@@ -119,6 +119,19 @@ def job_argv(request: dict) -> tuple[str, list[str], str]:
             argv.append("--rerun")
         return kind, argv, session.title
 
+    if kind == "quiz":
+        session = store.get_session(str(request.get("session") or ""))
+        if session is None:
+            raise JobError("that class no longer exists")
+        if not session.notes_path.exists():
+            raise JobError("this class has no notes to practise from yet")
+        # --list: no terminal to ask questions in. The CLI saves the cards,
+        # and the window shows them as flashcards.
+        argv = ["quiz", session.id, "--list"]
+        if request.get("fresh"):
+            argv.append("--new")
+        return kind, argv, session.title
+
     if kind == "catchup":
         return kind, ["catchup"], "Write up waiting classes"
 
@@ -143,7 +156,7 @@ class Job:
         self.returncode: int | None = None
         self.stop_requested = False
         self.session_id: str | None = (
-            request.get("session") if kind == "summarize" else None
+            request.get("session") if kind in ("summarize", "quiz") else None
         )
         tmp = Path(tempfile.gettempdir())
         self._stop_file = tmp / f"notetaker-stop-{self.id}"
@@ -376,6 +389,151 @@ def languages_list() -> list[dict]:
     return out
 
 
+def _video_link(session: store.Session):
+    """(link maker, offset) for a class made from a video link, else (None, 0)."""
+    if session.source_kind != config.SOURCE_VIDEO:
+        return None, 0.0
+    from .. import video
+
+    try:
+        meta = video.load_meta(session.directory)
+        return video.link_for(meta), float(meta.get("offset") or 0)
+    except Exception:
+        return None, 0.0
+
+
+SEARCH_HITS_PER_CLASS = 20
+
+
+def search_results(query: str) -> dict:
+    """Every class mentioning the query, as `notes search` finds them."""
+    from .. import search, timestamps
+
+    wanted = search.terms(query)
+    results = []
+    for found in search.search(query) if wanted else []:
+        session = found.session
+        link, offset = _video_link(session)
+        hits = []
+        for hit in found.hits[:SEARCH_HITS_PER_CLASS]:
+            at = hit.start + offset
+            hits.append({
+                "start": hit.start,  # where it is in the transcript
+                "label": timestamps.format_time(at),  # what the video says
+                "text": search.snippet(hit.text, wanted, width=160),
+                "link": link(max(at - timestamps.LEAD_IN_SECONDS, 0)) if link else None,
+            })
+        results.append({
+            "id": session.id,
+            "title": session.title,
+            "started": session.started_at,
+            "source": session.source_kind,
+            "inNotes": found.in_notes,
+            "inTitle": found.in_title,
+            "hits": hits,
+            "more": max(len(found.hits) - SEARCH_HITS_PER_CLASS, 0),
+        })
+    return {
+        "query": query,
+        "terms": wanted,
+        "total": sum(len(r["hits"]) + r["more"] for r in results),
+        "results": results,
+    }
+
+
+def quiz_cards(session: store.Session) -> tuple[list, bool]:
+    """(cards, written): the saved practice questions, or failing that the
+    'words to know' flashcards, which need no model and are made on the spot."""
+    from .. import quiz
+
+    saved = quiz.load(session.directory)
+    if saved is not None:
+        return saved, True
+    if not session.notes_path.exists():
+        return [], False
+    markdown = session.notes_path.read_text(encoding="utf-8")
+    return quiz.build(markdown, session.language, use_model=False), False
+
+
+def quiz_view(session: store.Session) -> dict:
+    from ..video import parse_time
+
+    cards, written = quiz_cards(session)
+    link, offset = _video_link(session)
+    out = []
+    for card in cards:
+        url = None
+        if link and card.time:
+            try:
+                url = link(parse_time(card.time))
+            except ValueError:
+                url = None
+        out.append({"question": card.question, "answer": card.answer,
+                    "kind": card.kind, "time": card.time, "link": url})
+    return {"cards": out, "written": written, "hasNotes": session.notes_path.exists()}
+
+
+_models_cache: dict = {"at": 0.0, "names": []}
+
+
+def ollama_models() -> list[str]:
+    """Models installed in Ollama, for the Settings page. Empty if it is off."""
+    import urllib.request
+
+    if time.time() - _models_cache["at"] > 30:
+        names: list[str] = []
+        try:
+            with urllib.request.urlopen(f"{config.OLLAMA_URL}/api/tags", timeout=2) as resp:
+                data = json.loads(resp.read())
+            names = sorted(m["name"] for m in data.get("models", []) if m.get("name"))
+        except Exception:
+            names = []
+        _models_cache.update(at=time.time(), names=names)
+    return list(_models_cache["names"])
+
+
+def settings_view() -> dict:
+    current = config.effective_settings()
+    overridden = {
+        key: f"{var}={os.environ[var]}"
+        for key, var in config.SETTINGS_ENV.items()
+        if os.environ.get(var) not in (None, "")
+    }
+    return {
+        "values": current,
+        "defaults": dict(config.SETTINGS_DEFAULTS),
+        "overridden": overridden,
+        "models": ollama_models(),
+        "languages": languages_list(),
+        "classMinutes": list(config.CLASS_LENGTH_CHOICES),
+        "dataDir": str(config.DATA_DIR),
+        "settingsFile": str(config.SETTINGS_PATH),
+    }
+
+
+def save_settings(changes: dict) -> dict:
+    if not isinstance(changes, dict) or not changes:
+        raise ValueError("nothing to change")
+    language = changes.get("notes_language")
+    if language and language not in config.supported_languages():
+        raise ValueError(f"there is no notes language called {language!r}")
+    config.save_settings(changes)
+    _models_cache["at"] = 0.0
+    return settings_view()
+
+
+def _attachment(handler, body: str, title: str, suffix: str) -> None:
+    # HTTP headers are Latin-1, so a Thai title goes in the UTF-8 form; the
+    # plain one is only for very old browsers.
+    name = f"{store.slugify(title)}{suffix}"
+    plain = name.encode("ascii", "ignore").decode()
+    if not plain.strip("-")[: -len(suffix)]:
+        plain = f"notes{suffix}"
+    handler._send(200, body.encode("utf-8"), "text/plain; charset=utf-8", {
+        "Content-Disposition": f"attachment; filename=\"{plain}\"; filename*=UTF-8''{quote(name)}",
+    })
+
+
 # --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
@@ -445,8 +603,14 @@ class Handler(BaseHTTPRequestHandler):
                 "job": job.to_json() if job else None,
                 "languages": languages_list(),
                 "classMinutes": list(config.CLASS_LENGTH_CHOICES),
-                "defaultMinutes": config.DEFAULT_CLASS_MINUTES,
+                # Read fresh: Settings may have changed it since startup.
+                "defaultMinutes": config.effective_settings()["class_minutes"],
             })
+        if route == ["search"]:
+            query = parse_qs(url.query).get("q", [""])[0][:200]
+            return self._json(search_results(query))
+        if route == ["settings"]:
+            return self._json(settings_view())
         if route == ["job"]:
             job = self.jobs.current
             return self._json({"job": job.to_json() if job else None})
@@ -472,17 +636,17 @@ class Handler(BaseHTTPRequestHandler):
                     if not session.notes_path.exists():
                         return self._error("no notes yet", 404)
                     body, suffix = session.notes_path.read_text(encoding="utf-8"), ".md"
-                # HTTP headers are Latin-1, so a Thai title goes in the UTF-8
-                # form; the plain one is only for very old browsers.
-                name = f"{store.slugify(session.title)}{suffix}"
-                plain = name.encode("ascii", "ignore").decode()
-                if not plain.strip("-")[: -len(suffix)]:
-                    plain = f"notes{suffix}"
-                return self._send(200, body.encode("utf-8"), "text/plain; charset=utf-8", {
-                    "Content-Disposition": (
-                        f"attachment; filename=\"{plain}\"; filename*=UTF-8''{quote(name)}"
-                    ),
-                })
+                return _attachment(self, body, session.title, suffix)
+            if route[2:] == ["quiz"]:
+                return self._json(quiz_view(session))
+            if route[2:] == ["quiz", "anki"]:
+                from .. import quiz
+
+                cards, _ = quiz_cards(session)
+                if not cards:
+                    return self._error("no practice questions yet", 404)
+                return _attachment(self, quiz.to_anki(cards, session.title),
+                                   f"{session.title} flashcards", ".txt")
         return self._error("not found", 404)
 
     # --------------------------------------------------------------- POST
@@ -510,6 +674,13 @@ class Handler(BaseHTTPRequestHandler):
             except OSError as exc:
                 return self._error(f"could not start: {exc}", 500)
             return self._json({"job": job.to_json()})
+        if self.path == "/api/settings":
+            try:
+                return self._json(save_settings(body.get("changes")))
+            except ValueError as exc:
+                return self._error(str(exc))
+            except OSError as exc:
+                return self._error(f"could not save settings: {exc}", 500)
         if self.path == "/api/job/stop":
             job = self.jobs.current
             if job:

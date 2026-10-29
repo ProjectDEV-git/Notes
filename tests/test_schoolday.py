@@ -327,8 +327,10 @@ def test_launcher_is_valid_shell():
 
 def test_notes_class_stops_by_itself():
     command = _dispatch("class")
-    assert "--minutes" in command
-    assert str(config.DEFAULT_CLASS_MINUTES) in command
+    # "usual" is the class length from Settings, resolved by the CLI.
+    assert "--minutes usual" in command
+    args = cli.build_parser().parse_args(["record", "--minutes", "usual"])
+    assert args.minutes == config.DEFAULT_CLASS_MINUTES > 0
 
 
 def test_notes_class_length_can_be_changed():

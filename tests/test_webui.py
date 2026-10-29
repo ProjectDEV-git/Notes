@@ -23,7 +23,8 @@ from notetaker.asr import Segment, TranscriptWriter
 
 @pytest.fixture()
 def db(tmp_path, monkeypatch):
-    data = tmp_path / "data"
+    # Where a child process looks too: $XDG_DATA_HOME/notetaker
+    data = tmp_path / "notetaker"
     sessions = data / "sessions"
     sessions.mkdir(parents=True)
     monkeypatch.setattr(config, "DATA_DIR", data)
@@ -33,6 +34,15 @@ def db(tmp_path, monkeypatch):
     # real one.
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.setattr(webui, "ollama_ok", lambda: False)
+    monkeypatch.setattr(webui, "ollama_models", lambda: [])
+    # Settings, for this process and for the CLI jobs it starts.
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr(config, "SETTINGS_PATH", settings)
+    monkeypatch.setenv("NOTETAKER_SETTINGS_FILE", str(settings))
+    for var in config.SETTINGS_ENV.values():
+        monkeypatch.delenv(var, raising=False)
+    # Nothing listens here, so a job never reaches a real notes writer.
+    monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:9")
     return data
 
 
@@ -355,7 +365,7 @@ def test_readme_walkthrough_names_buttons_the_window_really_has():
     readme = (root / "README.md").read_text(encoding="utf-8")
     steps = readme.split("### First time using NoteTaker?")[1].split("###")[0]
     page = (root / "notetaker" / "webui" / "index.html").read_text(encoding="utf-8")
-    for button in ("Check setup", "New notes", "Start recording"):
+    for button in ("Settings", "Check this computer", "New notes", "Start recording"):
         assert f"**{button}**" in steps
         assert button in page
 
@@ -370,3 +380,144 @@ def test_readme_images_exist():
     assert images, "the README should show the window"
     for image in images:
         assert (root / image).is_file(), image
+
+
+# ------------------------------------------------------------------ search
+def test_search_finds_what_was_said_in_every_class(server):
+    _class("Physics")
+    _class("Chemistry", notes=False)
+    resp, data = _request(server, "GET", "/api/search?q=" + quote("ENERGY conserved"))
+    found = json.loads(data)
+    assert resp.status == 200
+    assert found["terms"] == ["energy", "conserved"]
+    assert {r["title"] for r in found["results"]} == {"Physics", "Chemistry"}
+    hit = found["results"][0]["hits"][0]
+    assert hit["text"] == "energy is conserved" and hit["label"] == "0:00"
+    assert hit["link"] is None, "only a video has somewhere to play from"
+
+
+def test_a_search_hit_in_a_video_links_to_that_moment(server):
+    session = store.create_session("Lesson", config.SOURCE_VIDEO, "https://youtu.be/x")
+    (session.directory / "video.json").write_text(
+        json.dumps({"url": "https://www.youtube.com/watch?v=abc", "offset": 60}))
+    with TranscriptWriter(session.transcript_path) as writer:
+        writer.write([Segment(30.0, 33.0, "photosynthesis needs light", "en", 0)])
+    store.finish_session(session.id, duration=60.0, language="en")
+    _, data = _request(server, "GET", "/api/search?q=photosynthesis")
+    hit = json.loads(data)["results"][0]["hits"][0]
+    assert hit["start"] == 30.0, "where it is in the transcript"
+    assert hit["label"] == "1:30", "the video's own clock, after the skipped intro"
+    assert "t=87" in hit["link"], "a moment before it is said"
+
+
+def test_an_empty_search_finds_nothing(server):
+    _class("Physics")
+    _, data = _request(server, "GET", "/api/search?q=%20%20")
+    assert json.loads(data)["results"] == []
+
+
+# ------------------------------------------------------------------ practise
+def test_practice_before_questions_are_written_uses_the_words_to_know(server):
+    session = _class("Biology", notes=False)
+    store.write_notes(session, "# Biology\n\n## Key ideas\n- cells divide\n\n"
+                               "## Terms & definitions\n- **Mitosis**: a cell splitting in two\n")
+    _, data = _request(server, "GET", quote(f"/api/sessions/{session.id}/quiz"))
+    view = json.loads(data)
+    assert view["written"] is False
+    assert [(c["question"], c["answer"]) for c in view["cards"]] == [("Mitosis", "a cell splitting in two")]
+
+
+def test_written_questions_are_shown_and_go_to_anki(server):
+    from notetaker import quiz
+
+    session = _class("Physics")
+    quiz.save(session.directory, [quiz.Card("Is energy conserved?", "energy is conserved", "idea")])
+    _, data = _request(server, "GET", quote(f"/api/sessions/{session.id}/quiz"))
+    view = json.loads(data)
+    assert view["written"] is True and view["cards"][0]["question"] == "Is energy conserved?"
+
+    resp, data = _request(server, "GET", quote(f"/api/sessions/{session.id}/quiz/anki"))
+    assert resp.status == 200 and "attachment" in resp.getheader("Content-Disposition")
+    assert "Is energy conserved?\tenergy is conserved" in data.decode("utf-8")
+
+
+def test_no_anki_file_without_any_cards(server):
+    session = _class("Physics", notes=False)
+    resp, _ = _request(server, "GET", quote(f"/api/sessions/{session.id}/quiz/anki"))
+    assert resp.status == 404
+
+
+def test_writing_questions_is_the_same_command_as_notes_quiz(db):
+    session = _class("Physics")
+    kind, argv, label = webui.job_argv({"kind": "quiz", "session": session.id})
+    assert (kind, argv, label) == ("quiz", ["quiz", session.id, "--list"], "Physics")
+    _, argv, _ = webui.job_argv({"kind": "quiz", "session": session.id, "fresh": True})
+    assert argv[-1] == "--new"
+    cli.build_parser().parse_args(argv)
+    with pytest.raises(webui.JobError, match="no notes"):
+        webui.job_argv({"kind": "quiz", "session": _class("Maths", notes=False).id})
+
+
+def test_a_quiz_job_runs_without_a_notes_writer(db):
+    """With Ollama off it still finishes, with the words-to-know cards."""
+    session = _class("Physics", notes=False)
+    store.write_notes(session, "## Terms & definitions\n- **Energy**: the ability to do work\n")
+    job = webui.Job("quiz", ["quiz", session.id, "--list"], "Physics", {"session": session.id})
+    job.start()
+    deadline = time.time() + 60
+    while job.status == "running" and time.time() < deadline:
+        time.sleep(0.1)
+    assert job.status == "done", list(job.log)
+    assert job.session_id == session.id
+    assert any("Energy" in line for line in job.log)
+
+
+# ------------------------------------------------------------------ settings
+def test_settings_page_shows_values_and_defaults(server):
+    resp, data = _request(server, "GET", "/api/settings")
+    view = json.loads(data)
+    assert resp.status == 200
+    assert view["values"] == config.SETTINGS_DEFAULTS
+    assert view["overridden"] == {}
+    assert {"code": "th", "name": "ภาษาไทย"} in view["languages"] or any(
+        l["code"] == "th" for l in view["languages"])
+
+
+def test_a_setting_saved_in_the_window_reaches_the_file(server):
+    resp, data = _request(server, "POST", "/api/settings",
+                          {"changes": {"class_minutes": 45, "notes_language": "th"}},
+                          headers={"X-NoteTaker": "1"})
+    assert resp.status == 200
+    assert json.loads(data)["values"]["class_minutes"] == 45
+    assert config.load_settings(config.SETTINGS_PATH) == {"class_minutes": 45, "notes_language": "th"}
+    # The New notes page picks it up straight away, without a restart.
+    _, data = _request(server, "GET", "/api/state")
+    assert json.loads(data)["defaultMinutes"] == 45
+
+
+@pytest.mark.parametrize("changes, message", [
+    ({"class_minutes": 9000}, "between 1 and 600"),
+    ({"notes_language": "zz"}, "no notes language"),
+    ({"sneaky": 1}, "no setting"),
+    ({}, "nothing to change"),
+])
+def test_a_bad_setting_is_refused_with_a_sentence(server, changes, message):
+    resp, data = _request(server, "POST", "/api/settings", {"changes": changes},
+                          headers={"X-NoteTaker": "1"})
+    assert resp.status == 400
+    assert message in json.loads(data)["error"]
+    assert not config.SETTINGS_PATH.exists()
+
+
+def test_settings_cannot_be_changed_by_another_web_page(server):
+    resp, _ = _request(server, "POST", "/api/settings", {"changes": {"class_minutes": 45}})
+    assert resp.status == 403
+    assert not config.SETTINGS_PATH.exists()
+
+
+def test_settings_say_when_a_terminal_variable_wins(server, monkeypatch):
+    monkeypatch.setenv("NOTETAKER_NOTES_LEVEL", "university")
+    _, data = _request(server, "GET", "/api/settings")
+    view = json.loads(data)
+    assert view["overridden"] == {"notes_level": "NOTETAKER_NOTES_LEVEL=university"}
+    assert view["values"]["notes_level"] == "university"

@@ -76,6 +76,13 @@ def non_negative_int(value: str) -> int:
     return parsed
 
 
+def class_minutes(value: str) -> int:
+    """Minutes to record, or "usual" for the class length chosen in Settings."""
+    if value.strip().lower() == "usual":
+        return config.DEFAULT_CLASS_MINUTES
+    return non_negative_int(value)
+
+
 def positive_int(value: str) -> int:
     """Parse a setting that must be greater than zero."""
     parsed = non_negative_int(value)
@@ -86,6 +93,10 @@ def positive_int(value: str) -> int:
 
 def cmd_update(args: argparse.Namespace) -> int:
     """Update the checkout without overwriting local changes."""
+    # --quiet is the check the launcher makes on startup. Settings can turn
+    # that off; asking for `notes update` by name always works.
+    if args.quiet and not config.AUTO_UPDATE:
+        return 0
     app_dir = Path(__file__).resolve().parent.parent
     python_path = Path(sys.executable)
     try:
@@ -1424,9 +1435,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     record.add_argument("--title", "-t", default=None, help="lecture title")
     record.add_argument(
-        "--minutes", "-m", type=non_negative_int, default=0,
+        "--minutes", "-m", type=class_minutes, default=0,
         help="stop by itself after this many minutes (a class period). "
-             "0 = keep recording until Ctrl-C",
+             "'usual' = the length chosen in Settings. 0 = keep recording until Ctrl-C",
     )
     record.add_argument(
         "--live-notes", action="store_true",

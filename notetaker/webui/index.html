@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>NoteTaker</title>
+<script>
+  // Before anything paints, so a chosen theme never flashes the other one.
+  try { const t = JSON.parse(localStorage.getItem("nt.theme")); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c1c1a'/%3E%3Cpath d='M10 9h9l3 3v11H10z' fill='none' stroke='%23fff' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M13 15h6M13 19h4' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root {
@@ -293,6 +297,64 @@ a.tr-t:hover { color: var(--ink); }
 
 .welcome { padding-top: 15vh; }
 
+/* ------------------------------------------------------------ search */
+.search-all { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.search-all > svg { color: var(--ink-3); }
+.search-all .sa-text { flex: 1; min-width: 0; display: grid; }
+.search-all kbd, .kbd { font: 11px var(--mono); color: var(--ink-3); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 5px; }
+.results { margin-top: 28px; display: grid; gap: 30px; }
+.hit-class-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.hit-class-head a { font-weight: 600; font-size: 16px; text-decoration: none; }
+.hit-class-head a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.hit { display: grid; grid-template-columns: 60px 1fr auto; gap: 12px; align-items: baseline; padding: 7px 10px; margin: 0 -10px; border-radius: 8px; text-decoration: none; }
+.hit:hover { background: var(--hover); }
+.hit .tr-t { font-size: 12.5px; }
+.hit p { margin: 0; line-height: 1.65; color: var(--ink-2); }
+.hit .play { font-size: 12.5px; color: var(--ink-3); text-decoration: none; white-space: nowrap; }
+.hit .play:hover { color: var(--ink); }
+mark { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--ink); border-radius: 3px; padding: 0 1px; }
+.tr-row { scroll-margin: 40vh; border-radius: 8px; }
+.tr-row.hit-row { background: color-mix(in srgb, var(--warn) 14%, transparent); margin: 0 -10px; padding: 6px 10px; }
+
+/* ------------------------------------------------------------ practise */
+.practise { padding-top: 26px; }
+.practise-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--ink-3); font-size: 13.5px; }
+.practise-bar .grow { flex: 1; }
+.callout { margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: var(--hover); display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 14px; color: var(--ink-2); }
+.callout p { margin: 0; flex: 1; min-width: 220px; }
+.deck { margin-top: 18px; border: 1px solid var(--line); border-radius: 16px; padding: 26px 28px 24px; background: var(--panel); box-shadow: 0 1px 2px rgb(0 0 0 / 0.03); }
+.deck-top { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-3); font-weight: 500; }
+.deck .bar { max-width: none; margin: 10px 0 0; }
+.card-q { font-size: 21px; line-height: 1.45; font-weight: 600; letter-spacing: -0.01em; margin: 30px 0 6px; overflow-wrap: anywhere; }
+.card-hint { color: var(--ink-3); font-size: 14px; margin: 0; }
+.card-a { margin-top: 22px; padding-top: 20px; border-top: 1px dashed var(--line-2); font-size: 16.5px; line-height: 1.7; }
+.card-a p { margin: 0; }
+.card-a p::first-letter, .card-q::first-letter { text-transform: uppercase; }
+.card-a .said { display: inline-block; margin-top: 8px; font-size: 13px; color: var(--ink-3); }
+.deck .actions { margin-top: 28px; gap: 10px; }
+.deck .actions .kbd { margin-left: 4px; }
+.btn.good { background: color-mix(in srgb, var(--ok) 12%, var(--panel)); border-color: color-mix(in srgb, var(--ok) 45%, var(--line-2)); }
+.btn.good:hover { border-color: var(--ok); }
+.score { font-size: 44px; font-weight: 650; letter-spacing: -0.03em; margin: 18px 0 4px; font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------ settings */
+.settings { margin-top: 30px; }
+.set-title { font-size: 13px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; margin: 36px 0 4px; }
+.set-title:first-child { margin-top: 0; }
+.set-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 10px 28px; padding: 18px 0; border-bottom: 1px solid var(--line); align-items: start; }
+.set-row:last-child { border-bottom: 0; }
+.set-row .label { display: block; margin-bottom: 3px; }
+.set-row .hint code, .override code, .path { font: 12px var(--mono); }
+.override { grid-column: 1 / -1; font-size: 13px; color: var(--warn); margin: 0; }
+.choices { display: grid; gap: 8px; }
+.choice { text-align: left; border: 1px solid var(--line-2); background: var(--panel); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+.choice:hover { border-color: var(--ink-3); }
+.choice[aria-checked="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.choice b { display: block; font-weight: 600; font-size: 14px; }
+.choice span { display: block; font-size: 13px; color: var(--ink-3); }
+.choice:disabled, .chip:disabled, .input:disabled { opacity: 0.5; cursor: default; }
+.path { color: var(--ink-2); overflow-wrap: anywhere; }
+
 /* ------------------------------------------------------------ toast */
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px);
@@ -314,7 +376,12 @@ a.tr-t:hover { color: var(--ink); }
   .job > .back { display: flex; width: max-content; }
   .job { padding-top: 6vh; }
   .row { grid-template-columns: 1fr; }
-  .toolbar .btn.ghost span { display: none; }
+  .toolbar .btn.ghost span, .practise-bar .btn.ghost span { display: none; }
+  .set-row { grid-template-columns: 1fr; }
+  .deck { padding: 20px 18px; }
+  .card-q { font-size: 19px; }
+  .hit { grid-template-columns: 52px 1fr; }
+  .hit .play { grid-column: 2; }
   .h1 { font-size: 24px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -358,6 +425,8 @@ a.tr-t:hover { color: var(--ink); }
   <symbol id="i-play" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m10.5 9.5 4 2.5-4 2.5z"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-cards" viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="13" height="13" rx="2"/><path d="M7.5 6.5v-1a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 8.5v4.5M12 16.5v.01"/><path d="M10.3 4.2 3 17a2 2 0 0 0 1.7 3h14.6a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/></symbol>
 </svg>
 
@@ -373,6 +442,8 @@ const S = {
 const detailCache = new Map();
 let detailsOpen = false;
 let followJob = null;          // id of the job whose result should be shown
+let quiz = null;               // the flashcards being practised
+let settings = null;           // the Settings page, as last loaded
 const store = {
   get(k, d) { try { const v = localStorage.getItem("nt." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem("nt." + k, JSON.stringify(v)); } catch {} },
@@ -380,7 +451,7 @@ const store = {
 const form = {
   mode: store.get("mode", "class"),
   title: "",
-  minutes: store.get("minutes", null),
+  minutes: null,   // the usual length from Settings until one is picked
   later: false,
   lang: "auto",
   link: "", vtitle: "", from: "", to: "",
@@ -520,13 +591,20 @@ function markdown(src) {
 }
 
 /* ================================================================ routing */
+// #/s/<id>[/transcript[/<seconds>] | /practise], #/search/<words>, #/settings
 function route() {
   const h = location.hash.replace(/^#\/?/, "");
-  if (h.startsWith("s/")) return { name: "session", id: decodeURIComponent(h.slice(2)) };
+  if (h.startsWith("s/")) {
+    const [id, tab, at] = h.slice(2).split("/");
+    return { name: "session", id: decodeURIComponent(id), tab: tab || "notes", at: at === undefined ? null : Number(at) };
+  }
+  if (h.startsWith("search/")) return { name: "search", q: decodeURIComponent(h.slice(7)) };
   if (h === "new") return { name: "new" };
   if (h === "job") return { name: "job" };
+  if (h === "settings") return { name: "settings" };
   return { name: "home" };
 }
+const sessionHash = (id, tab, at) => `#/s/${encodeURIComponent(id)}${tab && tab !== "notes" ? "/" + tab : ""}${at != null ? "/" + Math.floor(at) : ""}`;
 function go(hash) { if (location.hash !== hash) location.hash = hash; else render(); }
 
 /* ================================================================ sidebar */
@@ -541,7 +619,8 @@ function renderSide() {
     const rec = job.kind === "record" && !job.stopping;
     const label = job.kind === "record"
       ? (job.stopping ? "Finishing up" : (job.later ? "Recording sound" : "Recording"))
-      : job.kind === "video" ? "Making notes from video" : job.kind === "check" ? "Checking" : "Writing notes";
+      : job.kind === "video" ? "Making notes from video" : job.kind === "check" ? "Checking"
+      : job.kind === "quiz" ? "Writing questions" : "Writing notes";
     notices += `<a class="notice running${rec ? "" : " busy"}" href="#/job">
       ${rec ? '<span class="status-dot"></span>' : '<span class="spinner" style="width:14px;height:14px"></span>'}
       <span class="grow"><b>${esc(label)}</b> · ${esc(job.label)}</span>
@@ -556,9 +635,13 @@ function renderSide() {
   $("#notices").innerHTML = notices;
 
   // The list, grouped by day.
-  const q = $("#search").value.trim().toLowerCase();
+  const typed = $("#search").value.trim();
+  const q = typed.toLowerCase();
   const items = S.sessions.filter((s) => !q || s.title.toLowerCase().includes(q));
   let html = "", lastDay = null;
+  // Titles filter as you type; Enter searches everything that was said.
+  const searchAll = typed ? `<a class="item search-all" href="#/search/${encodeURIComponent(typed)}"${r.name === "search" && r.q === typed ? ' aria-current="page"' : ""}>
+      ${icon("search")}<span class="sa-text"><span class="item-title">Search what was said</span><span class="item-meta">“${esc(typed)}” in every class</span></span><kbd>Enter</kbd></a>` : "";
   for (const s of items) {
     const d = parseDate(s.started);
     const label = d ? dayLabel(d) : "Earlier";
@@ -577,13 +660,14 @@ function renderSide() {
   }
   if (lastDay !== null) html += "</div>";
   if (!items.length) {
-    html = `<div class="list-empty">${q ? "No classes match." : (S.loaded ? "Your classes will appear here." : "")}</div>`;
+    html = `<div class="list-empty">${q ? "No class names match. Press Enter to search what was said." : (S.loaded ? "Your classes will appear here." : "")}</div>`;
   }
-  $("#list").innerHTML = html;
+  $("#list").innerHTML = searchAll + html;
 
+  const gear = `<a class="btn ghost" href="#/settings" title="Settings"${r.name === "settings" ? ' aria-current="page"' : ""}>${icon("gear")}<span>Settings</span></a>`;
   $("#foot").innerHTML = S.ollama
-    ? `<span class="dot"></span><span class="grow">Ready · runs offline</span><button class="link-btn" data-action="check">Check setup</button>`
-    : `<span class="dot off"></span><span class="grow" title="Start Ollama so notes can be written">Notes writer is off</span><button class="link-btn" data-action="check">Check setup</button>`;
+    ? `<span class="dot"></span><span class="grow">Ready · runs offline</span>${gear}`
+    : `<span class="dot off"></span><span class="grow" title="Start Ollama so notes can be written">Notes writer is off</span>${gear}`;
 }
 
 /* ================================================================ main views */
@@ -594,7 +678,9 @@ function render() {
   app.dataset.pane = r.name === "home" ? "side" : "main";
   renderSide();
   const main = $("#main");
-  if (r.name === "session") return renderSession(main, r.id);
+  if (r.name === "session") return renderSession(main, r.id, r.tab, r.at);
+  if (r.name === "search") return renderSearch(main, r.q);
+  if (r.name === "settings") return renderSettings(main);
   if (r.name === "job") return renderJob(main);
   if (r.name === "new") return renderNew(main);
   // Home on a wide screen: what is running, or a fresh page.
@@ -764,7 +850,8 @@ function renderJob(main) {
   const title = job.kind === "record" ? "Finishing up"
     : job.kind === "video" ? "Making notes from the video"
     : job.kind === "catchup" ? "Writing up your classes"
-    : job.kind === "check" ? "Checking this computer" : "Writing notes";
+    : job.kind === "check" ? "Checking this computer"
+    : job.kind === "quiz" ? "Writing practice questions" : "Writing notes";
   const sub = job.kind === "record"
     ? (job.later ? "Saving the recording." : "Transcribing the last part, then writing your notes. You can close the lid when it's done.")
     : "This takes a while. You can keep using the computer.";
@@ -805,7 +892,7 @@ function renderResult(main, job) {
     ${!ok && online ? '<p class="hint" style="margin-top:12px">Online classes need a one-time setup. In a terminal, run <code>notes setup-online</code>.</p>' : ""}
     ${job.log.length ? `<div class="log">${esc(job.log.join("\n"))}</div>` : ""}
     <div class="actions" style="margin-top:28px">
-      ${job.session ? `<a class="btn primary" href="#/s/${encodeURIComponent(job.session)}">Open notes</a>` : ""}
+      ${job.session ? `<a class="btn primary" href="${sessionHash(job.session, job.kind === "quiz" ? "practise" : "notes")}">${job.kind === "quiz" ? "Practise" : "Open notes"}</a>` : ""}
       <a class="btn" href="#/new">New notes</a>
     </div>
     <p class="cmd">${esc(job.command)}</p>
@@ -824,7 +911,7 @@ function tick() {
 }
 
 /* ---------------------------------------------------------------- session */
-async function renderSession(main, id, tab) {
+async function renderSession(main, id, tab, at) {
   let s = detailCache.get(id);
   if (!s) {
     main.innerHTML = `<section class="view">${backBtn()}<span class="spinner"></span></section>`;
@@ -842,11 +929,12 @@ async function renderSession(main, id, tab) {
       <div class="seg small" role="tablist">
         <button role="tab" data-tab="notes" aria-selected="${tab === "notes"}">Notes</button>
         <button role="tab" data-tab="transcript" aria-selected="${tab === "transcript"}"${s.hasTranscript ? "" : " disabled"}>Transcript</button>
+        <button role="tab" data-tab="practise" aria-selected="${tab === "practise"}"${s.notes ? "" : " disabled"}>Practise</button>
       </div>
       <span class="grow"></span>
-      ${s.notes ? `<button class="btn ghost" data-action="copy" title="Copy notes" aria-label="Copy notes">${icon("copy")}<span>Copy</span></button>
+      ${s.notes && tab === "notes" ? `<button class="btn ghost" data-action="copy" title="Copy notes" aria-label="Copy notes">${icon("copy")}<span>Copy</span></button>
       <a class="btn ghost" href="/api/sessions/${q}/download?kind=md" download title="Download as a Markdown file" aria-label="Download notes">${icon("download")}<span>Download</span></a>` : ""}
-      ${s.notes && s.hasTranscript ? `<button class="btn ghost" data-action="rewrite" title="Write the notes again" aria-label="Write the notes again"${busy() ? " disabled" : ""}>${icon("redo")}<span>Rewrite</span></button>` : ""}
+      ${s.notes && s.hasTranscript && tab === "notes" ? `<button class="btn ghost" data-action="rewrite" title="Write the notes again" aria-label="Write the notes again"${busy() ? " disabled" : ""}>${icon("redo")}<span>Rewrite</span></button>` : ""}
     </div>`;
 
   main.innerHTML = `<article class="view">${backBtn()}
@@ -865,10 +953,17 @@ async function renderSession(main, id, tab) {
     body.innerHTML = `<div class="transcript"><span class="spinner"></span></div>`;
     try {
       const rows = await api(`/api/sessions/${q}/transcript`);
-      body.innerHTML = `<div class="transcript">${rows.map((r) => `<div class="tr-row"><span class="tr-t">${clock(r.start)}</span><p>${esc(r.text)}</p></div>`).join("") || '<p class="muted">The transcript is empty.</p>'}</div>`;
+      body.innerHTML = `<div class="transcript">${rows.map((r) => `<div class="tr-row" data-start="${r.start}"><span class="tr-t">${clock(r.start)}</span><p>${esc(r.text)}</p></div>`).join("") || '<p class="muted">The transcript is empty.</p>'}</div>`;
+      if (at != null) {
+        // Coming from a search result: show that moment, marked.
+        const all = [...body.querySelectorAll(".tr-row")];
+        const row = all.filter((el) => Number(el.dataset.start) <= at + 0.5).pop() || all[0];
+        if (row) { row.classList.add("hit-row"); row.scrollIntoView({ block: "center" }); }
+      }
     } catch (e) { body.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
     return;
   }
+  if (tab === "practise") return renderPractise(body, s);
   if (s.notes) { body.innerHTML = `<div class="prose">${markdown(s.notes)}</div>`; return; }
   body.innerHTML = emptyNotes(s);
 }
@@ -892,6 +987,220 @@ function emptyNotes(s) {
     ${!direct && S.pendingCount > 1 ? `<p class="hint">This writes up all ${S.pendingCount} waiting classes, oldest first.</p>` : ""}
     ${busy() ? '<p class="hint">Something else is running. Try again when it finishes.</p>' : ""}
   </div>`;
+}
+
+/* ---------------------------------------------------------------- search */
+// Mark each searched word in a line. Built from plain text, so it stays escaped.
+function highlight(text, terms) {
+  const lower = text.toLowerCase();
+  if (lower.length !== text.length) return esc(text);
+  const marked = new Array(text.length).fill(false);
+  for (const t of terms) {
+    if (!t) continue;
+    for (let i = lower.indexOf(t); i !== -1; i = lower.indexOf(t, i + t.length)) {
+      for (let k = i; k < i + t.length; k++) marked[k] = true;
+    }
+  }
+  let out = "", open = false;
+  for (let i = 0; i < text.length; i++) {
+    if (marked[i] !== open) { out += open ? "</mark>" : "<mark>"; open = marked[i]; }
+    out += esc(text[i]);
+  }
+  return out + (open ? "</mark>" : "");
+}
+
+async function renderSearch(main, q) {
+  const box = $("#search");
+  if (document.activeElement !== box && box.value.trim() !== q) { box.value = q; renderSide(); }
+  main.innerHTML = `<section class="view">${backBtn()}<div class="eyebrow">Search</div><h1 class="h1">“${esc(q)}”</h1><div style="margin-top:28px"><span class="spinner"></span></div></section>`;
+  let data;
+  try { data = await api(`/api/search?q=${encodeURIComponent(q)}`); }
+  catch (e) { main.querySelector("div[style]").innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+  const r = route();
+  if (r.name !== "search" || r.q !== q) return;
+  const classes = data.results.length;
+  let body;
+  if (!classes) {
+    body = `<div class="empty"><h2>Nothing found</h2><p>Try fewer words, or another spelling. Every word you type has to appear.</p></div>`;
+  } else {
+    body = `<div class="results">${data.results.map((c) => {
+      const d = parseDate(c.started);
+      const when = [d ? dayLabel(d) : "", sourceLabel(c.source)].filter(Boolean).join(" · ");
+      const hits = c.hits.map((h) => `<a class="hit" href="${sessionHash(c.id, "transcript", h.start)}">
+          <span class="tr-t">${esc(h.label)}</span><p>${highlight(h.text, data.terms)}</p>
+          ${h.link ? `<span class="play" data-href="${esc(h.link)}" title="Play the video from here">Play ↗</span>` : ""}</a>`).join("");
+      const more = c.more ? `<a class="hit" href="${sessionHash(c.id, "transcript")}"><span></span><p class="muted">and ${c.more} more in the transcript</p></a>` : "";
+      const notesOnly = !c.hits.length ? `<a class="hit" href="${sessionHash(c.id)}"><span></span><p class="muted">${c.inNotes ? "Mentioned in the notes" : "In the class name"}</p></a>` : "";
+      return `<section><div class="hit-class-head"><a href="${sessionHash(c.id)}">${esc(c.title)}</a><span class="meta" style="margin:0">${esc(when)}</span></div>${hits}${more}${notesOnly}</section>`;
+    }).join("")}</div>`;
+  }
+  main.innerHTML = `<section class="view">${backBtn()}
+    <div class="eyebrow">Search</div>
+    <h1 class="h1">“${esc(q)}”</h1>
+    <div class="meta">${classes ? `${data.total} ${data.total === 1 ? "mention" : "mentions"} in ${classes} ${classes === 1 ? "class" : "classes"}` : "Every class, every word that was said"}</div>
+    ${body}</section>`;
+}
+
+/* ---------------------------------------------------------------- practise */
+function shuffled(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+function startQuiz(id, cards) {
+  quiz = { id, all: cards, order: shuffled(cards), i: 0, shown: false, right: [], wrong: [] };
+}
+
+async function renderPractise(body, s) {
+  const writing = busy() && S.job.kind === "quiz" && S.job.session === s.id;
+  if (writing) {
+    body.innerHTML = `<div class="empty"><span class="spinner"></span><h2>Writing practice questions</h2><p>They will appear here when they are ready.</p></div>`;
+    return;
+  }
+  body.innerHTML = `<div class="practise"><span class="spinner"></span></div>`;
+  let data;
+  try { data = await api(`/api/sessions/${encodeURIComponent(s.id)}/quiz`); }
+  catch (e) { body.innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+  const r = route();
+  if (r.name !== "session" || r.id !== s.id || r.tab !== "practise") return;
+  if (!quiz || quiz.id !== s.id || quiz.all.length !== data.cards.length) startQuiz(s.id, data.cards);
+  quiz.written = data.written;
+  drawPractise(body, s);
+}
+
+function drawPractise(body, s) {
+  const n = quiz.all.length;
+  const blocked = busy() ? " disabled" : "";
+  const offline = !S.ollama ? `<div class="warn-line">${icon("alert")}Start Ollama first — it writes the questions.</div>` : "";
+  const bar = `<div class="practise-bar">${icon("cards")}<span class="grow">${n ? `${n} ${n === 1 ? "card" : "cards"} from your notes` : "Practice questions"}</span>
+      ${n ? `<a class="btn ghost" href="/api/sessions/${encodeURIComponent(s.id)}/quiz/anki" download title="A file Anki can import (File › Import)">${icon("download")}<span>Anki</span></a>` : ""}
+      ${quiz.written ? `<button class="btn ghost" data-action="quiz-new" title="Write a fresh set of questions"${blocked}>${icon("redo")}<span>New questions</span></button>` : ""}</div>`;
+
+  if (!n) {
+    body.innerHTML = `<div class="practise">${bar}<div class="empty">
+      <h2>No practice questions yet</h2>
+      <p>NoteTaker reads these notes and writes a question for each key idea. The answers are always your own notes, word for word.</p>
+      ${offline}<button class="btn primary" data-action="quiz-make"${blocked}>Write practice questions</button></div></div>`;
+    return;
+  }
+  const upsell = !quiz.written ? `<div class="callout"><p>These flashcards come from the words to know. Add a question for every key idea too.</p>${offline}
+      <button class="btn" data-action="quiz-make"${blocked}>Write practice questions</button></div>` : "";
+
+  if (quiz.i >= quiz.order.length) {
+    const got = quiz.right.length, of = quiz.order.length, missed = quiz.wrong.length;
+    body.innerHTML = `<div class="practise">${bar}${upsell}<div class="deck" style="text-align:center">
+      <div class="deck-top" style="justify-content:center">Finished</div>
+      <div class="score">${got} / ${of}</div>
+      <p class="card-hint">${got === of ? "Every one. Well done." : got >= of * 0.7 ? "Nearly there." : "Read the notes once more, then try again."}</p>
+      <div class="actions" style="justify-content:center">
+        ${missed ? `<button class="btn primary" data-action="quiz-missed">Practise the ${missed} I missed</button>` : ""}
+        <button class="btn${missed ? "" : " primary"}" data-action="quiz-again">Start again</button>
+        <a class="btn ghost" href="${sessionHash(s.id)}">Read the notes</a>
+      </div></div></div>`;
+    return;
+  }
+  const card = quiz.order[quiz.i];
+  const word = card.kind === "word";
+  const said = card.time ? (card.link
+      ? `<a class="said" href="${esc(card.link)}" target="_blank" rel="noopener noreferrer">said at ${esc(card.time)} ↗</a>`
+      : `<span class="said">said at ${esc(card.time)}</span>`) : "";
+  body.innerHTML = `<div class="practise">${bar}${upsell}<div class="deck">
+    <div class="deck-top"><span>${quiz.i + 1} of ${quiz.order.length}</span><span>${word ? "Word to know" : "Key idea"}</span></div>
+    <div class="bar"><i style="width:${(quiz.i / quiz.order.length) * 100}%"></i></div>
+    <p class="card-q">${inline(card.question)}</p>
+    <p class="card-hint">${word ? "What does it mean?" : "Answer in your head first."}</p>
+    ${quiz.shown ? `<div class="card-a"><p>${inline(card.answer)}</p>${said}</div>` : ""}
+    <div class="actions">${quiz.shown
+      ? `<button class="btn" data-action="quiz-wrong">Not yet <span class="kbd">1</span></button><button class="btn good" data-action="quiz-right">Got it <span class="kbd">2</span></button>`
+      : `<button class="btn primary" data-action="quiz-show">Show answer <span class="kbd" style="color:inherit;border-color:currentColor;opacity:.6">Space</span></button>`}</div>
+  </div></div>`;
+}
+
+function quizStep(action) {
+  const r = route();
+  const s = detailCache.get(r.id);
+  if (!quiz || !s || r.name !== "session" || r.tab !== "practise") return;
+  if (action === "show") quiz.shown = true;
+  else if (action === "right" || action === "wrong") {
+    if (!quiz.shown) return;
+    (action === "right" ? quiz.right : quiz.wrong).push(quiz.order[quiz.i]);
+    quiz.i += 1; quiz.shown = false;
+  } else if (action === "again") startQuiz(quiz.id, quiz.all);
+  else if (action === "missed") { const missed = quiz.wrong; startQuiz(quiz.id, quiz.all); quiz.order = shuffled(missed); }
+  drawPractise($("#doc-body"), s);
+}
+
+/* ---------------------------------------------------------------- settings */
+const LEVELS = [["school", "A school student", "Short sentences, and every new word explained"],
+                ["university", "A university student", "Denser, and assumes more"]];
+
+async function renderSettings(main) {
+  if (!settings) main.innerHTML = `<section class="view">${backBtn()}<h1 class="h1">Settings</h1><div style="margin-top:28px"><span class="spinner"></span></div></section>`;
+  try { settings = await api("/api/settings"); } catch (e) { toast(e.message); return; }
+  if (route().name !== "settings") return;
+  drawSettings(main);
+}
+
+function drawSettings(main) {
+  const v = settings.values, over = settings.overridden;
+  const lock = (key) => over[key] ? " disabled" : "";
+  const note = (key) => over[key] ? `<p class="override">Set by <code>${esc(over[key])}</code> in your terminal, which wins over this.</p>` : "";
+  const row = (key, label, hint, control) => `<div class="set-row"><div><span class="label">${label}</span>${hint ? `<p class="hint">${hint}</p>` : ""}</div><div>${control}</div>${note(key)}</div>`;
+  const theme = store.get("theme", "system");
+
+  const minutes = settings.classMinutes.includes(v.class_minutes) ? settings.classMinutes : [...settings.classMinutes, v.class_minutes].sort((a, b) => a - b);
+  const lengthChips = `<div class="chips" role="radiogroup" aria-label="Usual class length">${minutes.map((m) =>
+    `<button type="button" class="chip" role="radio" aria-checked="${v.class_minutes === m}" data-set="class_minutes" data-value="${m}"${lock("class_minutes")}>${m} min</button>`).join("")}</div>`;
+  const levelChoices = `<div class="choices" role="radiogroup" aria-label="Who the notes are for">${LEVELS.map(([k, t, d]) =>
+    `<button type="button" class="choice" role="radio" aria-checked="${v.notes_level === k}" data-set="notes_level" data-value="${k}"${lock("notes_level")}><b>${t}</b><span>${d}</span></button>`).join("")}</div>`;
+  const langSelect = `<select class="input" data-set-select="notes_language" aria-label="Write the notes in"${lock("notes_language")}>
+      <option value="">The language spoken in the class</option>
+      ${settings.languages.map((l) => `<option value="${esc(l.code)}"${v.notes_language === l.code ? " selected" : ""}>${esc(l.name)}</option>`).join("")}</select>`;
+  const themeChips = `<div class="chips" role="radiogroup" aria-label="Theme">${[["system", "Match this computer"], ["light", "Light"], ["dark", "Dark"]].map(([k, t]) =>
+    `<button type="button" class="chip" role="radio" aria-checked="${theme === k}" data-theme-choice="${k}">${t}</button>`).join("")}</div>`;
+  const models = settings.models.includes(v.summary_model) ? settings.models : [v.summary_model, ...settings.models];
+  const modelControl = settings.models.length
+    ? `<select class="input" data-set-select="summary_model" aria-label="Notes writer model"${lock("summary_model")}>${models.map((m) => `<option${m === v.summary_model ? " selected" : ""}>${esc(m)}</option>`).join("")}</select>`
+    : `<input class="input" data-set-input="summary_model" value="${esc(v.summary_model)}" aria-label="Notes writer model" spellcheck="false"${lock("summary_model")}>`;
+  const deviceChoices = `<div class="choices" role="radiogroup" aria-label="Graphics card">${[["auto", "When it works", "Faster on an NVIDIA card; falls back to the processor"], ["cpu", "Never", "Always use the processor"]].map(([k, t, d]) =>
+    `<button type="button" class="choice" role="radio" aria-checked="${(v.device === "cuda" ? "auto" : v.device) === k}" data-set="device" data-value="${k}"${lock("device")}><b>${t}</b><span>${d}</span></button>`).join("")}</div>`;
+  const updates = `<label class="toggle" for="set-updates"><input type="checkbox" id="set-updates" data-set-check="auto_update"${v.auto_update ? " checked" : ""}${lock("auto_update")}><span class="switch"></span>
+      <span class="toggle-text"><b>${v.auto_update ? "On" : "Off"}</b><span>${v.auto_update ? "Checks quickly, and never if you have changed the code." : "Update by hand with: notes update"}</span></span></label>`;
+
+  main.innerHTML = `<section class="view">${backBtn()}
+    <h1 class="h1">Settings</h1>
+    <p class="lede">These apply here and to the <code>notes</code> command in a terminal.</p>
+    <div class="settings">
+      <h2 class="set-title">Classes</h2>
+      ${row("class_minutes", "Usual class length", "New classes start with this. You can still pick another when you start one.", lengthChips)}
+      ${row("notes_level", "Notes are written for", "The facts are the same either way. Only the wording changes.", levelChoices)}
+      ${row("notes_language", "Write the notes in", "For example, Thai notes from an English lesson.", langSelect)}
+      <h2 class="set-title">Appearance</h2>
+      ${row("", "Theme", "Only for this browser.", themeChips)}
+      <h2 class="set-title">Advanced</h2>
+      ${row("summary_model", "Notes writer model", settings.models.length ? "The Ollama model that writes notes and questions. Bigger is better but slower." : "Start Ollama to choose from the models you have.", modelControl)}
+      ${row("device", "Use a graphics card for transcribing", "", deviceChoices)}
+      ${row("auto_update", "Check for updates when NoteTaker starts", "", updates)}
+      <h2 class="set-title">This computer</h2>
+      ${row("", "Check that everything works", "The microphone, system audio and the notes writer.", `<button class="btn" data-action="check"${busy() ? " disabled" : ""}>Check this computer</button>`)}
+      ${row("", "Your classes are kept in", "Recordings, transcripts and notes. Nothing is uploaded.", `<span class="path">${esc(settings.dataDir)}</span>`)}
+    </div></section>`;
+}
+
+async function saveSetting(key, value) {
+  try {
+    settings = await api("/api/settings", { changes: { [key]: value } });
+    if (key === "class_minutes") { S.defaultMinutes = settings.values.class_minutes; form.minutes = null; }
+    toast("Saved");
+  } catch (e) { toast(e.message); }
+  if (route().name === "settings") drawSettings($("#main"));  // unless they moved on
+}
+
+function applyTheme(choice) {
+  store.set("theme", choice);
+  if (choice === "light" || choice === "dark") document.documentElement.dataset.theme = choice;
+  else delete document.documentElement.dataset.theme;
 }
 
 /* ================================================================ polling */
@@ -931,7 +1240,13 @@ function onJobChange(prev, job) {
   // Whatever just finished may have changed any class.
   detailCache.clear();
   const r = route();
-  if (job.status === "done" && job.session && job.kind !== "summarize") {
+  if (job.kind === "quiz" && job.status === "done") {
+    toast("Practice questions are ready");
+    quiz = null;
+    if (followJob === job.id && (r.name === "job" || r.name === "home" || (r.name === "session" && r.id === job.session))) {
+      go(sessionHash(job.session, "practise")); return true;
+    }
+  } else if (job.status === "done" && job.session && job.kind !== "summarize") {
     toast("Your notes are ready");
     if (followJob === job.id && (r.name === "job" || r.name === "home")) { go(`#/s/${encodeURIComponent(job.session)}`); return true; }
   } else if (job.status === "done" && job.kind === "summarize") {
@@ -946,14 +1261,18 @@ function onJobChange(prev, job) {
 
 /* ================================================================ events */
 document.addEventListener("click", async (ev) => {
-  const t = ev.target.closest("[data-mode],[data-minutes],[data-subject],[data-action],[data-tab]");
-  if (!t) return;
+  const play = ev.target.closest(".play[data-href]");
+  if (play) { ev.preventDefault(); window.open(play.dataset.href, "_blank", "noopener,noreferrer"); return; }
+  const t = ev.target.closest("[data-mode],[data-minutes],[data-subject],[data-action],[data-tab],[data-set],[data-theme-choice]");
+  if (!t || t.disabled) return;
+  if (t.dataset.set) { saveSetting(t.dataset.set, t.dataset.set === "class_minutes" ? Number(t.dataset.value) : t.dataset.value); return; }
+  if (t.dataset.themeChoice) { applyTheme(t.dataset.themeChoice); drawSettings($("#main")); return; }
   if (t.dataset.mode) { readForm(); form.mode = t.dataset.mode; store.set("mode", form.mode); renderNew($("#main")); return; }
   if (t.dataset.minutes !== undefined) {
-    readForm(); form.minutes = Number(t.dataset.minutes); store.set("minutes", form.minutes); renderNew($("#main")); return;
+    readForm(); form.minutes = Number(t.dataset.minutes); renderNew($("#main")); return;
   }
   if (t.dataset.subject !== undefined) { readForm(); form.title = t.dataset.subject; renderNew($("#main")); return; }
-  if (t.dataset.tab) { const r = route(); if (r.name === "session") renderSession($("#main"), r.id, t.dataset.tab); return; }
+  if (t.dataset.tab) { const r = route(); if (r.name === "session") go(sessionHash(r.id, t.dataset.tab)); return; }
 
   const a = t.dataset.action;
   const r = route();
@@ -970,6 +1289,12 @@ document.addEventListener("click", async (ev) => {
     startJob({ kind: "summarize", session: r.id });
   } else if (a === "rewrite" && r.name === "session") {
     if (confirm("Write these notes again? The current notes will be replaced.")) startJob({ kind: "summarize", session: r.id, rerun: true });
+  } else if (a === "quiz-make" && r.name === "session") {
+    startJob({ kind: "quiz", session: r.id });
+  } else if (a === "quiz-new" && r.name === "session") {
+    if (confirm("Write a fresh set of practice questions? The current ones are replaced.")) startJob({ kind: "quiz", session: r.id, fresh: true });
+  } else if (a && a.startsWith("quiz-")) {
+    quizStep(a.slice(5));
   } else if (a === "copy" && r.name === "session") {
     const s = detailCache.get(r.id);
     try { await navigator.clipboard.writeText(s.notes); toast("Notes copied"); } catch { toast("Could not copy. Use Download instead."); }
@@ -980,6 +1305,26 @@ document.addEventListener("toggle", (ev) => { if (ev.target.id === "job-details"
 document.addEventListener("submit", (ev) => { if (ev.target.id === "new-form") { ev.preventDefault(); submitNew(); } });
 document.addEventListener("input", (ev) => { if (ev.target.id === "f-title") { form.title = ev.target.value; document.querySelectorAll("[data-subject]").forEach((c) => c.setAttribute("aria-pressed", c.dataset.subject === form.title)); } });
 $("#search").addEventListener("input", renderSide);
+$("#search").addEventListener("keydown", (ev) => {
+  const q = ev.target.value.trim();
+  if (ev.key === "Enter" && q) go(`#/search/${encodeURIComponent(q)}`);
+  if (ev.key === "Escape") { ev.target.value = ""; renderSide(); }
+});
+document.addEventListener("change", (ev) => {
+  const t = ev.target;
+  if (t.dataset.setSelect) saveSetting(t.dataset.setSelect, t.value || null);
+  else if (t.dataset.setInput) saveSetting(t.dataset.setInput, t.value.trim());
+  else if (t.dataset.setCheck) saveSetting(t.dataset.setCheck, t.checked);
+});
+// Flashcards from the keyboard: Space shows the answer, 1 / 2 mark it.
+document.addEventListener("keydown", (ev) => {
+  const r = route();
+  if (r.name !== "session" || r.tab !== "practise" || !quiz) return;
+  if (ev.target.closest("input, select, textarea") || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if ((ev.key === " " || ev.key === "Enter") && !quiz.shown && quiz.i < quiz.order.length) { ev.preventDefault(); quizStep("show"); }
+  else if (quiz.shown && (ev.key === "1" || ev.key === "ArrowLeft")) quizStep("wrong");
+  else if (quiz.shown && (ev.key === "2" || ev.key === "ArrowRight")) quizStep("right");
+});
 window.addEventListener("hashchange", () => { render(); $("#main").scrollTop = 0; });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 setInterval(tick, 500);
