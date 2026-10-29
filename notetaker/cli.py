@@ -1055,6 +1055,40 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _export_printable(session: store.Session, args: argparse.Namespace) -> int:
+    """A page to print or share, and a PDF when a browser can make one."""
+    from . import printable, quiz
+
+    if not session.notes_path.exists():
+        return fail("no notes for this class yet. Write them with:  notes catchup")
+    markdown = session.notes_path.read_text(encoding="utf-8")
+    page_html = printable.to_html(
+        markdown, session.title, quiz.notes_language(markdown, session.language))
+
+    wanted = config.user_path(args.output) if args.output else None
+    base = (wanted.with_suffix("") if wanted
+            else config.caller_dir() / session.id)
+    page = base.with_suffix(".html")
+    page.write_text(page_html, encoding="utf-8")
+    if not args.pdf:
+        echo(f"[green]exported:[/green] {page}\n"
+             "[dim]Open it in a browser to read, print, or send.[/dim]")
+        return 0
+
+    pdf = base.with_suffix(".pdf")
+    browser = printable.find_browser()
+    if browser and printable.html_to_pdf(page, pdf, browser):
+        page.unlink(missing_ok=True)
+        echo(f"[green]exported:[/green] {pdf}")
+        return 0
+    echo(
+        f"[yellow]No browser could make the PDF here[/yellow], so the notes were saved as "
+        f"a page instead:\n  {page}\n"
+        "[dim]Open it, press Ctrl-P (Cmd-P on a Mac), and choose 'Save as PDF'.[/dim]"
+    )
+    return 0
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     try:
         session = store.resolve_session(args.session)
@@ -1067,6 +1101,8 @@ def cmd_export(args: argparse.Namespace) -> int:
             return fail("no transcript to export")
         content = "\n".join(s.text for s in segments)
         suffix = ".txt"
+    elif args.html or args.pdf:
+        return _export_printable(session, args)
     else:
         if not session.notes_path.exists():
             return fail("no notes for this class yet. Write them with:  notes catchup")
@@ -1420,6 +1456,10 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("session", help="session id or part of the title")
     export.add_argument("--md", action="store_true", help="export notes as markdown (default)")
     export.add_argument("--txt", action="store_true", help="export the raw transcript")
+    export.add_argument("--html", action="store_true",
+                        help="a page to print or share (opens in any browser)")
+    export.add_argument("--pdf", action="store_true",
+                        help="a PDF, made with a browser already on this computer")
     export.add_argument("--output", "-o", default=None)
 
     lang = subparsers.add_parser("lang", help="add or edit the languages notes are written in")

@@ -171,6 +171,7 @@ Anything else is passed to the full CLI:
 notes record --title "Physics week 4" --lang th --minutes 50
 notes summarize physics --hq
 notes export physics -o notes.md
+notes export physics --pdf          # to print, or send to a friend
 notes summarize physics --rerun --level university   # denser wording
 ```
 
@@ -198,7 +199,7 @@ notetaker list                         # past recordings
 notetaker show <id> [--transcript]
 notetaker search <words> [-n 5]        # where was this said? every class, with times
 notetaker summarize <id> [--rerun] [--hq] [--level school|university]
-notetaker export <id> [--md|--txt] [-o FILE]
+notetaker export <id> [--md|--txt|--html|--pdf] [-o FILE]
 notetaker lang list|add|edit|remove    # languages your notes are written in
 ```
 

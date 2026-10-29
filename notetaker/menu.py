@@ -450,10 +450,16 @@ def _save_to_file() -> int:
     session = pick_session("save")
     if session is None:
         return 0
+    out("\n[bold]What kind of file?[/bold]")
+    out("  [bold]1[/bold]. PDF [dim](to print or send; recommended)[/dim]")
+    out("  [bold]2[/bold]. Web page [dim](opens in any browser)[/dim]")
+    out("  [bold]3[/bold]. Markdown [dim](plain text with formatting marks)[/dim]")
+    kind = ask("\nNumber (Enter = PDF): ", "1")
+    flag, suffix = {"2": ("--html", "html"), "3": ("--md", "md")}.get(kind, ("--pdf", "pdf"))
     destination = ask(
-        f"\nSave as (Enter for {session.id}.md): ", f"{session.id}.md"
+        f"\nSave as (Enter for {session.id}.{suffix}): ", f"{session.id}.{suffix}"
     )
-    return _cli("export", session.id, "-o", destination)
+    return _cli("export", session.id, flag, "-o", destination)
 
 
 def _check() -> int:
