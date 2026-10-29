@@ -358,6 +358,22 @@ else
     ok "Python dependencies ready"
 fi
 
+# Video links (YouTube and other sites) need one more helper. NoteTaker
+# fetches it the first time a link is used, but that is a bad moment: the
+# lesson is about to start. Offering it here means it is already there.
+if "$APP_DIR/.venv/bin/python" -c "import yt_dlp" >/dev/null 2>&1; then
+    ok "video links (YouTube) ready"
+elif confirm_install "Set up YouTube and video links now? (about 60 MB; otherwise it downloads the first time you paste a link)"; then
+    say "  installing the video helper..."
+    if "$APP_DIR/.venv/bin/pip" install -q -r "$APP_DIR/requirements-video.txt"; then
+        ok "video links (YouTube) ready"
+    else
+        warn "the video helper did not install; NoteTaker will try again the first time you use a link"
+    fi
+else
+    say "  skipped: video links will set themselves up the first time you use one"
+fi
+
 # --------------------------------------------------------------------------
 # 3. Ollama, which writes the notes
 # --------------------------------------------------------------------------

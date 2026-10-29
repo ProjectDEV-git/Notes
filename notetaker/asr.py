@@ -135,19 +135,38 @@ class Transcriber:
                 f"{model_name!r} is English-only and cannot transcribe Thai. "
                 "Use a multilingual model such as 'small'."
             )
-        from faster_whisper import WhisperModel
-
         self.model_name = model_name
         self.forced_language = language
-        self._model = WhisperModel(
-            model_name,
-            device=device,
-            compute_type=compute_type,
-            cpu_threads=cpu_threads,
-        )
+        # Why the graphics card was not used, when there is one. Only for
+        # `notes check`; transcription carries on, on the processor.
+        self.gpu_problem: str | None = None
+        self.device, self._model = self._load(model_name, device, compute_type, cpu_threads)
         self._detected: Counter[str] = Counter()
         self._locked_language: str | None = language
         self._previous: list[Segment] = []
+
+    def _load(self, model_name: str, device: str, compute_type: str, cpu_threads: int):
+        """The model on the graphics card if it really works, else the processor."""
+        from faster_whisper import WhisperModel
+
+        from . import gpu
+
+        tries = gpu.candidates(device, compute_type, config.GPU_COMPUTE_TYPE)
+        for index, (where, kind) in enumerate(tries):
+            last = index == len(tries) - 1
+            try:
+                if where == "cuda":
+                    gpu.expose_pip_libraries()
+                model = WhisperModel(model_name, device=where, compute_type=kind,
+                                     cpu_threads=cpu_threads)
+                if where == "cuda":
+                    _warm_up(model)  # missing cuDNN only shows up on first use
+                return where, model
+            except Exception as exc:
+                if last:
+                    raise
+                self.gpu_problem = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+        raise RuntimeError("no device to transcribe on")  # pragma: no cover
 
     # -- language handling ----------------------------------------------
     @property
@@ -243,6 +262,17 @@ class Transcriber:
                 except Exception:
                     pass  # a broken display must never cost the transcript
         return produced
+
+
+def _warm_up(model) -> None:
+    """One second of silence through the whole model, VAD off so it really runs."""
+    import numpy
+
+    segments, _ = model.transcribe(
+        numpy.zeros(config.SAMPLE_RATE, dtype=numpy.float32),
+        language="en", vad_filter=False, beam_size=1,
+    )
+    list(segments)
 
 
 # --------------------------------------------------------------------------

@@ -173,12 +173,21 @@ def test_reading_notes_needs_no_session_id():
 
 
 def test_export_offers_a_ready_made_filename():
-    with _tty(), _answers("5", ""), _sessions(_Session("a", "Physics", has_notes=True)), \
+    """Enter, Enter: a PDF with a sensible name, the thing people want to send."""
+    with _tty(), _answers("5", "", ""), _sessions(_Session("a", "Physics", has_notes=True)), \
             patch("notetaker.cli.main", return_value=0) as cli:
         menu.main()
     argv = cli.call_args[0][0]
-    assert argv[:2] == ["export", "a"]
-    assert argv[argv.index("-o") + 1] == "a.md"
+    assert argv[:3] == ["export", "a", "--pdf"]
+    assert argv[argv.index("-o") + 1] == "a.pdf"
+
+
+def test_export_can_still_save_markdown():
+    with _tty(), _answers("5", "3", ""), _sessions(_Session("a", "Physics", has_notes=True)), \
+            patch("notetaker.cli.main", return_value=0) as cli:
+        menu.main()
+    argv = cli.call_args[0][0]
+    assert "--md" in argv and argv[argv.index("-o") + 1] == "a.md"
 
 
 def test_existing_notes_are_not_regenerated_without_consent():
@@ -323,8 +332,8 @@ def test_a_nonsense_level_answer_falls_back_safely():
 
 def test_more_options_passes_the_chosen_level_through():
     """Otherwise the only way to change it is the command line."""
-    # language, level, subject, class length, online?
-    with _tty(), _no_pending(), _answers("8", "1", "2", "1", "1", "n"), \
+    # language, level, notes language, subject, class length, online?
+    with _tty(), _no_pending(), _answers("8", "1", "2", "", "1", "1", "n"), \
             patch("notetaker.cli.main", return_value=0) as cli:
         menu.main()
     argv = cli.call_args[0][0]
