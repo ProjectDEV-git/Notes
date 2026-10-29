@@ -478,6 +478,11 @@ def local_site(tmp_path, lesson_mp4):
     site.mkdir()
     shutil.copy(lesson_mp4, site / "lesson.mp4")
     (site / "lesson.vtt").write_text(VTT)
+    shutil.copy(lesson_mp4, site / "lesson2.mp4")
+    (site / "course.html").write_text(
+        "<html><head><title>Course</title></head><body>"
+        '<video src="lesson.mp4"></video><video src="lesson2.mp4"></video></body></html>'
+    )
     (site / "page.html").write_text(
         "<html><head><title>Physics week 4</title></head><body>"
         '<video src="lesson.mp4"><track kind="subtitles" srclang="en" src="lesson.vtt">'
@@ -634,3 +639,102 @@ def test_whole_file_transcription_reports_progress():
     segments = transcriber.transcribe_file(Path("x.wav"), progress=lambda d, t: seen.append((d, t)))
     assert [s.text for s in segments] == ["one", "two"]
     assert seen == [(10.0, 40.0), (20.0, 40.0), (40.0, 40.0)]
+
+
+# ---------------------------------------------------------------- playlists
+def test_a_youtube_playlist_lists_its_videos():
+    playlist = video.parse_playlist({
+        "_type": "playlist", "title": "Physics course",
+        "entries": [
+            {"_type": "url", "ie_key": "Youtube", "title": "Lesson 1",
+             "url": "https://www.youtube.com/watch?v=a"},
+            {"_type": "url", "ie_key": "Youtube", "title": "[Private video]",
+             "url": "https://www.youtube.com/watch?v=b"},
+            None,
+            {"title": "no address"},
+        ],
+    })
+    assert playlist.title == "Physics course"
+    assert [(e.url, e.title) for e in playlist.entries] == [
+        ("https://www.youtube.com/watch?v=a", "Lesson 1"),
+        ("https://www.youtube.com/watch?v=b", "[Private video]"),
+    ]
+
+
+def test_a_whole_channel_is_explained_not_downloaded():
+    with pytest.raises(video.VideoError, match="whole channel"):
+        video.parse_playlist({"_type": "playlist", "entries": [
+            {"_type": "url", "ie_key": "YoutubeTab", "url": "https://www.youtube.com/@x/videos"},
+        ]})
+
+
+def test_a_page_with_several_videos_lists_the_files():
+    playlist = video.parse_playlist({"_type": "playlist", "entries": [
+        {"title": "Course (1)", "formats": [{"url": "http://x/1.mp4"}]},
+    ]})
+    assert playlist.entries[0].url == "http://x/1.mp4"
+
+
+def test_looking_up_a_playlist_does_not_open_every_video(monkeypatch):
+    calls = []
+
+    def run(cmd, **k):
+        calls.append(cmd)
+        return _completed(0, stdout='{"_type": "playlist", "title": "C", "entries": []}')
+
+    monkeypatch.setattr(video.subprocess, "run", run)
+    assert isinstance(video.fetch_info("https://youtube.com/playlist?list=x", print), video.Playlist)
+    assert "--flat-playlist" in calls[0]
+
+
+def _fake_playlist(monkeypatch, titles, broken=()):
+    entries = [video.PlaylistEntry(f"https://youtu.be/{i}", t) for i, t in enumerate(titles)]
+
+    def fetch(url, echo, language=None):
+        if url == "https://youtube.com/playlist?list=x":
+            return video.Playlist("Physics course", entries)
+        index = int(url.rsplit("/", 1)[1])
+        if titles[index] in broken:
+            raise video.VideoError("That video is private, so it cannot be downloaded.")
+        return video.VideoInfo(url=f"https://www.youtube.com/watch?v={index}",
+                               title=titles[index], duration=30, language="en",
+                               caption_key=None)
+
+    monkeypatch.setattr(video, "have_downloader", lambda: True)
+    monkeypatch.setattr(video, "fetch_info", fetch)
+    imported = []
+    monkeypatch.setattr(cli, "_import_one",
+                        lambda args, **k: imported.append(k["title"]) or 0)
+    return imported
+
+
+def test_every_video_in_a_playlist_becomes_a_class(db, monkeypatch, capsys):
+    imported = _fake_playlist(monkeypatch, ["Lesson 1", "Lesson 2", "Lesson 3"])
+    assert cli.main(["video", "https://youtube.com/playlist?list=x", "--later"]) == 0
+    assert imported == ["Lesson 1", "Lesson 2", "Lesson 3"]
+    assert "finished 3 of 3" in capsys.readouterr().out
+
+
+def test_a_playlist_can_be_limited_and_titled(db, monkeypatch):
+    imported = _fake_playlist(monkeypatch, ["Lesson 1", "Lesson 2", "Lesson 3"])
+    assert cli.main(["video", "https://youtube.com/playlist?list=x",
+                     "--limit", "2", "--title", "Physics"]) == 0
+    assert imported == ["Physics: Lesson 1", "Physics: Lesson 2"]
+
+
+def test_one_bad_video_does_not_stop_the_playlist(db, monkeypatch, capsys):
+    imported = _fake_playlist(monkeypatch, ["Lesson 1", "Gone", "Lesson 3"], broken={"Gone"})
+    assert cli.main(["video", "https://youtube.com/playlist?list=x"]) == 1
+    assert imported == ["Lesson 1", "Lesson 3"]
+    out = capsys.readouterr().out
+    assert "skipped" in out and "Not finished: Gone" in out
+
+
+@pytest.mark.skipif(not video.have_downloader(), reason="yt-dlp not installed")
+def test_a_real_playlist_downloads_every_video_and_resumes(db, local_site, capsys):
+    url = f"{local_site}/course.html"
+    assert cli.main(["video", url, "--later"]) == 0
+    assert len(store.pending_sessions()) == 2
+    assert cli.main(["video", url, "--later"]) == 0
+    assert len(store.list_sessions()) == 2, "finished videos are skipped on a re-run"
+    assert "already done" in capsys.readouterr().out

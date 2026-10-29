@@ -148,11 +148,15 @@ the file into the window), and press Enter.
   `notes all`, so `show`, `export` and `summarize --hq` all work on it.
 - Giving it the **same link twice** shows the notes you already have instead
   of doing it all again. Add `--again` to start over.
+- **A playlist link does the whole course**, one class per video. `--limit 5`
+  does only the first five. If it stops part-way, run the same command again:
+  finished videos are skipped. For a long playlist, `--later` downloads
+  everything now and `notes catchup` writes it up afterwards.
 
 When a site changes how it works (YouTube does, often), NoteTaker updates the
 helper by itself and tries again. Private, members-only and age-restricted
 videos cannot be downloaded; download those another way and give NoteTaker
-the file. For a stream that is **live right now**, record it with
+the file. A whole channel is not downloaded either: use one of its playlists. For a stream that is **live right now**, record it with
 `notes online` while it plays.
 
 Anything else is passed to the full CLI:
@@ -182,6 +186,7 @@ notetaker catchup [--limit N]          # write up every class still missing note
 notetaker video <link-or-file> [--title T] [--lang L] [--later] [--hq]
                [--whisper]             # ignore the video's own subtitles
                [--again]               # redo a video you already have
+               [--limit N]             # for a playlist: only the first N videos
 notetaker list                         # past recordings
 notetaker show <id> [--transcript]
 notetaker summarize <id> [--rerun] [--hq] [--level school|university]

@@ -58,6 +58,18 @@ class VideoInfo:
     chapters: list[dict] = field(default_factory=list)  # {start, title}, full-video time
 
 
+@dataclass
+class PlaylistEntry:
+    url: str
+    title: str
+
+
+@dataclass
+class Playlist:
+    title: str
+    entries: list[PlaylistEntry]
+
+
 # --------------------------------------------------------------------------
 # What did the student paste?
 # --------------------------------------------------------------------------
@@ -334,13 +346,50 @@ def parse_info(data: dict, language: str | None = None) -> VideoInfo:
     )
 
 
-def fetch_info(url: str, echo: Echo, language: str | None = None) -> VideoInfo:
-    result = _run_downloader(["--dump-single-json", url], echo,
+def parse_playlist(data: dict) -> Playlist:
+    """The videos in a playlist, as listed without opening each one.
+
+    A channel page lists its tabs (Videos, Shorts, Live) as playlists of their
+    own. Downloading a whole channel is rarely what a student means, so that
+    is explained rather than attempted.
+    """
+    entries: list[PlaylistEntry] = []
+    for item in data.get("entries") or []:
+        if not isinstance(item, dict):
+            continue
+        nested = item.get("_type") == "playlist" or str(item.get("ie_key") or "").endswith("Tab")
+        if nested:
+            raise VideoError(
+                "That link is a whole channel. Open one of its playlists, or one "
+                "video, and copy that link instead."
+            )
+        url = item.get("url") or item.get("webpage_url")
+        formats = item.get("formats") or []
+        if not url and len(formats) == 1 and isinstance(formats[0], dict):
+            # A plain web page with several <video> tags lists the media files
+            # themselves, which can be fetched directly.
+            url = formats[0].get("url")
+        if isinstance(url, str) and url:
+            title = str(item.get("title") or url).strip()
+            entries.append(PlaylistEntry(normalize_url(url), title))
+    return Playlist(str(data.get("title") or "Playlist").strip() or "Playlist", entries)
+
+
+def fetch_info(url: str, echo: Echo, language: str | None = None) -> VideoInfo | Playlist:
+    """Look a link up. A playlist comes back as its list of videos.
+
+    --flat-playlist lists a playlist without opening every video in it, so a
+    50-video course is looked up in seconds. A single video is unaffected,
+    and --no-playlist keeps a video opened from inside a playlist to itself.
+    """
+    result = _run_downloader(["--dump-single-json", "--flat-playlist", url], echo,
                              capture_stdout=True, timeout=INFO_TIMEOUT)
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise VideoError("the website sent something NoteTaker could not read") from exc
+    if data.get("_type") == "playlist" or "entries" in data:
+        return parse_playlist(data)
     info = parse_info(data, language)
     info.url = info.url or url
     return info

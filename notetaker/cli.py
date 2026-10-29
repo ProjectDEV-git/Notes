@@ -510,7 +510,6 @@ def _transcription_progress():
 def cmd_video(args: argparse.Namespace) -> int:
     """Make notes from a YouTube (or other) link, or a video/audio file."""
     from . import video
-    from .audio import wav_duration
 
     config.ensure_dirs()
     pasted = video.clean_pasted(args.source)
@@ -539,13 +538,41 @@ def cmd_video(args: argparse.Namespace) -> int:
                 video.install_downloader(echo)
             echo("[dim]looking up the video...[/dim]")
             info = video.fetch_info(url, echo, language=language)
+            if isinstance(info, video.Playlist):
+                return _import_playlist(args, info, language)
             origin = info.url
             title = args.title or info.title
     except video.VideoError as exc:
         return fail(str(exc))
 
+    return _import_one(
+        args, path=path if is_file else None, url=None if is_file else url,
+        info=info, title=title, origin=origin, language=language,
+    )
+
+
+def _import_one(
+    args: argparse.Namespace,
+    *,
+    path: Path | None,
+    url: str | None,
+    info,
+    title: str,
+    origin: str,
+    language: str | None,
+    quiet_repeat: bool = False,
+) -> int:
+    """Turn one video or file into a class, then transcribe and summarize it."""
+    from . import video
+    from .audio import wav_duration
+
+    is_file = path is not None
+
     earlier = None if args.again else _previous_import(origin)
     if earlier is not None:
+        if quiet_repeat:
+            echo(f"[dim]already done: {earlier.title}[/dim]")
+            return 0
         echo(
             f"[yellow]You already have this video:[/yellow] {earlier.title} "
             f"[dim]({earlier.id})[/dim]\n"
@@ -644,6 +671,53 @@ def cmd_video(args: argparse.Namespace) -> int:
     session = store.get_session(session.id) or session
     return _summarize_session(session, model=args.summary_model, level=args.level)
 
+
+
+def _import_playlist(args: argparse.Namespace, playlist, language: str | None) -> int:
+    """Every video in a playlist, one after another, each its own class.
+
+    Re-running the same playlist picks up where it stopped: videos already
+    done are skipped, so an interrupted course costs nothing to resume.
+    """
+    from . import video
+
+    entries = playlist.entries[: args.limit] if args.limit else playlist.entries
+    if not entries:
+        return fail("that playlist has no videos in it")
+    count = len(entries)
+    more = f" (the first {count} of {len(playlist.entries)})" if count < len(playlist.entries) else ""
+    echo(f"[bold]{playlist.title}[/bold]: {count} videos{more}")
+    if not args.later:
+        echo("[dim]Transcribing every video takes a long time. To only download now and "
+             "write the notes later, stop with Ctrl-C and add --later.[/dim]")
+
+    done, failed = 0, []
+    for index, entry in enumerate(entries, start=1):
+        echo(f"\n[bold]({index}/{count})[/bold] {entry.title}")
+        try:
+            info = video.fetch_info(entry.url, echo, language=language)
+            if isinstance(info, video.Playlist):
+                raise video.VideoError("this entry is a playlist of its own")
+        except video.VideoError as exc:
+            echo(f"  [yellow]skipped:[/yellow] {exc}")
+            failed.append(entry.title)
+            continue
+        title = f"{args.title}: {info.title}" if args.title else info.title
+        code = _import_one(
+            args, path=None, url=entry.url, info=info, title=title,
+            origin=info.url, language=language, quiet_repeat=True,
+        )
+        if code == 0:
+            done += 1
+        else:
+            failed.append(info.title)
+
+    echo(f"\n[green]finished {done} of {count}.[/green]")
+    if failed:
+        echo("[yellow]Not finished:[/yellow] " + ", ".join(failed))
+        echo("[dim]Run the same command again to retry; finished videos are skipped. "
+             "Videos that were saved but have no notes yet:  notes catchup[/dim]")
+    return 0 if not failed else 1
 
 # --------------------------------------------------------------------------
 # list / show / export
@@ -1069,6 +1143,10 @@ def build_parser() -> argparse.ArgumentParser:
     video_cmd.add_argument(
         "--again", action="store_true",
         help="make a new copy even if this video was done before",
+    )
+    video_cmd.add_argument(
+        "--limit", "-n", type=non_negative_int, default=0,
+        help="for a playlist: only the first N videos (0 = all of them)",
     )
     video_cmd.add_argument("--summary-model", default=config.SUMMARY_MODEL, help="Ollama model")
     video_cmd.add_argument(
