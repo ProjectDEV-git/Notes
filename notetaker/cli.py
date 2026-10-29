@@ -999,6 +999,53 @@ def cmd_quiz(args: argparse.Namespace) -> int:
     return 0
 
 
+def _size(num_bytes: float) -> str:
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if num_bytes < 1024 or unit == "GB":
+            return f"{num_bytes:.0f} {unit}" if unit == "bytes" else f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024
+    return f"{num_bytes:.1f} GB"  # pragma: no cover
+
+
+def cmd_cleanup(args: argparse.Namespace) -> int:
+    """Free space by deleting old recordings. Notes and transcripts stay."""
+    from .menu import confirm
+
+    sessions = store.audio_to_free(args.older_than)
+    if not sessions:
+        echo(f"[green]Nothing to clean up.[/green] [dim]No finished class older than "
+             f"{args.older_than} days still has its recording.[/dim]")
+        return 0
+    sizes = {s.id: s.audio_path.stat().st_size for s in sessions}
+    total = sum(sizes.values())
+    echo(f"[bold]{len(sessions)} old recording(s), {_size(total)}[/bold] can be deleted. "
+         "Their notes and transcripts are kept.")
+    for session in sessions[:10]:
+        when = session.started_at.replace("T", " ")[:10]
+        echo(f"  • {session.title} [dim]{when}, {_size(sizes[session.id])}[/dim]")
+    if len(sessions) > 10:
+        echo(f"  [dim]… and {len(sessions) - 10} more[/dim]")
+    echo("[dim]Without the recording, 'summarize --hq' cannot redo those transcripts.[/dim]")
+
+    if args.dry_run:
+        return 0
+    if not args.yes:
+        if not sys.stdin.isatty():
+            return fail("add --yes to delete without being asked")
+        if not confirm("\nDelete these recordings?", default=False):
+            echo("[dim]Nothing was deleted.[/dim]")
+            return 0
+    freed = 0
+    for session in sessions:
+        try:
+            session.audio_path.unlink()
+            freed += sizes[session.id]
+        except OSError as exc:
+            echo(f"[yellow]could not delete {session.audio_path}: {exc}[/yellow]")
+    echo(f"[green]Freed {_size(freed)}.[/green]")
+    return 0
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     sessions = store.list_sessions(limit=args.limit)
     if not sessions:
@@ -1420,6 +1467,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="mentions to show per class (default 5)",
     )
 
+    cleanup = subparsers.add_parser(
+        "cleanup", help="free space: delete old recordings, keep notes and transcripts"
+    )
+    cleanup.add_argument("--older-than", type=non_negative_int, default=30, metavar="DAYS",
+                         help="only classes at least this many days old (default 30)")
+    cleanup.add_argument("--dry-run", action="store_true", help="only show what would go")
+    cleanup.add_argument("--yes", "-y", action="store_true", help="do not ask first")
+
     quiz_cmd = subparsers.add_parser(
         "quiz", help="practise with questions and flashcards from a class's notes"
     )
@@ -1492,6 +1547,7 @@ COMMANDS = {
     "list": cmd_list,
     "search": cmd_search,
     "quiz": cmd_quiz,
+    "cleanup": cmd_cleanup,
     "show": cmd_show,
     "summarize": cmd_summarize,
     "export": cmd_export,

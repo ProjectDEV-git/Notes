@@ -131,6 +131,10 @@ case "${1-}" in
     all|ls|list)
         run list
         ;;
+    cleanup|clean|tidy)
+        shift
+        run cleanup "$@"
+        ;;
     quiz|practice|practise|revise|flashcards)
         shift
         run quiz "$@"
@@ -168,6 +172,7 @@ notes last       show the notes from your last class
 notes all        list every class
 notes search X   find where X was said, in every class
 notes quiz       practise with questions from your last class's notes
+notes cleanup    free space: delete old recordings, keep the notes
 notes check      confirm the microphone and notes writer work
 notes update     update NoteTaker safely from its Git repository
 notes lang       add or list note languages

@@ -341,3 +341,34 @@ def pending_sessions(db_path: Path | None = None) -> list[Session]:
     # The id carries the collision suffix, which breaks the tie in real order.
     pending.sort(key=lambda s: (s.started_at, s.id))
     return pending
+
+
+def audio_to_free(older_than_days: float, db_path: Path | None = None,
+                  now: datetime | None = None) -> list[Session]:
+    """Classes whose recording can be deleted without losing anything.
+
+    Only classes that are finished: notes written from a complete
+    transcript. A class still waiting for `catchup`, or whose transcript was
+    cut short, keeps its audio, because that audio is the only way to
+    finish it. Oldest first.
+    """
+    cutoff = (now or datetime.now()).timestamp() - older_than_days * 86400
+    pending = {s.id for s in pending_sessions(db_path=db_path)}
+    found = []
+    for session in list_sessions(db_path=db_path):
+        try:
+            started = datetime.fromisoformat(session.started_at).timestamp()
+        except ValueError:
+            continue
+        if (
+            started <= cutoff
+            and session.id not in pending
+            and session.audio_path.exists()
+            and session.has_notes
+            and session.notes_path.exists()
+            and session.transcript_path.exists()
+            and not session.transcript_is_partial
+        ):
+            found.append(session)
+    found.sort(key=lambda s: (s.started_at, s.id))
+    return found

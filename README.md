@@ -80,6 +80,7 @@ notes last       # show the notes from your last class
 notes all        # list every class
 notes search X   # find where X was said, in every class (with video links)
 notes quiz       # practise with questions from your last class's notes
+notes cleanup    # free space: delete old recordings, keep the notes
 notes check      # confirm your microphone and notes writer work
 notes update     # update NoteTaker and Python dependencies safely
 ```
@@ -550,10 +551,11 @@ for the whole day rather than waiting after each period.
   once with `notes catchup`.
 - Summarizing is CPU-bound and will make the laptop warm. A faster machine, or
   a smaller model via `--summary-model`, cuts the wait proportionally.
-- **Recordings are never deleted.** A one-hour class keeps about 115 MB of
-  audio so `--hq` re-runs stay possible. Delete old sessions yourself from
-  `~/.local/share/notetaker/sessions/` (on Windows,
-  `%LOCALAPPDATA%\NoteTaker\sessions\`) if space runs short.
+- **Recordings are kept until you clean up.** A one-hour class keeps about
+  115 MB of audio so `--hq` re-runs stay possible. `notes cleanup` deletes
+  the recordings of finished classes older than 30 days (`--older-than 7`
+  to change), keeping every note and transcript. It asks first, and never
+  touches a class that still needs `notes catchup`.
 - **macOS needs a loopback driver for online classes.** BlackHole or similar;
   see Install. In-person recording works with no extra setup.
 - **Windows needs Stereo Mix (or VB-CABLE) for online classes.** Many
