@@ -355,7 +355,10 @@ def session_detail(session: store.Session, pending_ids: set[str]) -> dict:
         try:
             from .. import video
 
-            data["link"] = video.link_for(video.load_meta(session.directory))
+            meta = video.load_meta(session.directory)
+            # link_for() only answers when the link is a safe http(s) one.
+            if video.link_for(meta) is not None:
+                data["link"] = meta["url"]
         except Exception:
             pass
     return data

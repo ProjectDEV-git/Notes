@@ -272,7 +272,7 @@ details.more > .more-body { margin-top: 14px; display: grid; gap: 14px; }
 .prose code { font: .88em var(--mono); background: var(--hover); padding: .1em .35em; border-radius: 5px; }
 .prose a.ts {
   font: 12px var(--mono); text-decoration: none; color: var(--ink-3);
-  border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; margin-left: 4px;
+  border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; margin-left: 2px;
   vertical-align: 1px; white-space: nowrap;
 }
 .prose a.ts:hover { color: var(--ink); border-color: var(--ink-3); }
@@ -461,7 +461,9 @@ function inline(text) {
     const ts = /^\d{1,2}(:\d{2}){1,2}$/.test(label);
     return `<a href="${url}" target="_blank" rel="noopener noreferrer"${ts ? ' class="ts" title="Play from here"' : ""}>${label}</a>`;
   });
-  s = s.replace(/\(\s*(<a [^>]*class="ts"[^>]*>[^<]*<\/a>)\s*\)/g, "$1");
+  // "(12:34)" becomes a small pill, glued to the word before it so it never
+  // wraps onto a line by itself.
+  s = s.replace(/\s*\(\s*(<a [^>]*class="ts"[^>]*>[^<]*<\/a>)\s*\)/g, "&nbsp;$1");
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/(^|[^*\w])\*(?!\s)([^*]+?)\*(?!\w)/g, "$1<em>$2</em>");
   return s;

@@ -313,6 +313,17 @@ def test_a_class_can_be_read_downloaded_and_its_transcript_shown(server):
     assert "filename*=UTF-8''" in resp.getheader("Content-Disposition")
 
 
+def test_a_class_made_from_a_video_links_back_to_it(server):
+    session = store.create_session("Photosynthesis", config.SOURCE_VIDEO, "https://youtu.be/x")
+    (session.directory / "video.json").write_text(
+        json.dumps({"url": "https://www.youtube.com/watch?v=abc", "offset": 0})
+    )
+    store.finish_session(session.id, duration=60.0, language="en")
+    resp, data = _request(server, "GET", quote(f"/api/sessions/{session.id}"))
+    assert resp.status == 200
+    assert json.loads(data)["link"] == "https://www.youtube.com/watch?v=abc"
+
+
 def test_an_unknown_class_is_a_clean_404(server):
     resp, data = _request(server, "GET", "/api/sessions/nope")
     assert resp.status == 404
@@ -330,3 +341,32 @@ def test_the_window_is_one_word_away():
 def test_ui_command_parses():
     args = cli.build_parser().parse_args(["ui", "--no-browser", "--port", "0"])
     assert args.no_browser and args.port == 0
+
+
+def test_readme_walkthrough_names_buttons_the_window_really_has():
+    """The first-time steps send a new user to buttons by name.
+
+    If a button is renamed, the walkthrough must change with it, or a new
+    user is told to click something that is not there.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    steps = readme.split("### First time using NoteTaker?")[1].split("###")[0]
+    page = (root / "notetaker" / "webui" / "index.html").read_text(encoding="utf-8")
+    for button in ("Check setup", "New notes", "Start recording"):
+        assert f"**{button}**" in steps
+        assert button in page
+
+
+def test_readme_images_exist():
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    images = re.findall(r"(docs/images/[\w.-]+\.png)", readme)
+    assert images, "the README should show the window"
+    for image in images:
+        assert (root / image).is_file(), image
