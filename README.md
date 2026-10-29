@@ -42,7 +42,8 @@ You do not need to know Python or any command-line options:
    Mac or Windows it puts a **NoteTaker** icon on your Desktop.
 2. Double-click the icon (on Linux, type `notes ui`). NoteTaker opens in your
    web browser.
-3. Click **Check setup** at the bottom left and follow any fix it shows.
+3. Open **Settings** at the bottom left, click **Check this computer**, and
+   follow any fix it shows.
 4. Click **New notes**, pick the subject and how long the class is, and press
    **Start recording**.
 
@@ -77,6 +78,32 @@ notes, download them as a file, or have them written again. Notes from a video
 show when each point was said; click the time to replay that moment.
 
 ![Notes from a video, each point linked to the moment it was said](docs/images/video-notes.png)
+
+**Search everything that was said.** Type in the search box: class names
+filter as you type, and **Enter** searches every word said in every class.
+Click a line to open the transcript at that moment; for a video, **Play**
+opens the video there.
+
+![Search results: every class that mentioned energy, with times](docs/images/search.png)
+
+**Practise for a test.** Open a class and choose **Practise**: one question
+at a time, **Space** to see the answer, then **1** (not yet) or **2** (got it).
+At the end it offers just the ones you missed. Every answer is your own notes,
+word for word. Words to know are ready straight away; **Write practice
+questions** adds a question for every key idea, and **Anki** saves the cards
+for [Anki](https://apps.ankiweb.net/).
+
+![Practising: a flashcard with its answer showing](docs/images/practise.png)
+
+**Settings** (bottom left) holds the choices you would otherwise make every
+time: the usual class length, who the notes are written for, and the language
+to write them in, plus the theme. Under *Advanced*: the notes writer model,
+the graphics card, and the startup update check. The terminal uses the same
+settings, so `notes class` records for the length you chose there. A variable
+you set yourself, such as `NOTES_CLASS_MINUTES`, still wins, and the page says
+so. They are kept in `~/.config/notetaker/settings.json`.
+
+![Settings: class length, reading level and notes language](docs/images/settings.png)
 
 A class that still needs notes has a dot next to it, and **Write up** at the
 top of the list writes every waiting class in one go.
@@ -151,14 +178,15 @@ notes update     # update NoteTaker and Python dependencies safely
 
 The `notes` launcher checks for updates automatically when it starts. It skips
 the check if the checkout has local changes, and continues opening the app if
-the network is unavailable. Set `NOTES_AUTO_UPDATE=0` to disable startup
-checks.
+the network is unavailable. Turn startup checks off in **Settings**, or set
+`NOTES_AUTO_UPDATE=0`.
 
 `notes class` **stops on its own** two minutes after the period ends, because
 classes overrun and the homework is usually the last thing said. Ctrl-C always
 stops sooner. Key ideas also appear live while you record.
 
-If your periods are not 60 minutes:
+If your periods are not 60 minutes, set the usual class length in
+**Settings** once. For a single class:
 
 ```bash
 NOTES_CLASS_MINUTES=45 notes class
@@ -288,7 +316,7 @@ exactly at both settings, and inventing homework that was never set is
 forbidden at both.
 
 Pick **8. Record with more options** in the menu to change it for one class,
-or use the command line:
+choose it once in **Settings**, or use the command line:
 
 ```bash
 notes summarize physics --rerun --level university   # denser, assumes more
@@ -301,6 +329,8 @@ simply uses its normal ones, so nothing you have already written needs
 changing. See **[docs/LANGUAGES.md](docs/LANGUAGES.md)**.
 
 ### Practise for a test
+
+In the window, open a class and choose **Practise**. From the terminal:
 
 ```bash
 notes quiz                 # questions from your last class, one at a time
@@ -323,7 +353,8 @@ notes record --notes-lang th              # works for any class
 export NOTETAKER_NOTES_LANGUAGE=th        # or make it the default
 ```
 
-The menu asks too (Enter keeps the language of the lesson). The notes are
+The menu asks too (Enter keeps the language of the lesson), and
+**Settings** can make it the default. The notes are
 written and checked against the transcript in the language spoken, then
 translated as the last step, so translating cannot add points nobody said.
 Numbers, units and formulas must come through unchanged: a line where they do
@@ -401,7 +432,8 @@ note-writing actually work.
 
 ### Staying up to date
 
-NoteTaker updates itself when you start it. There is nothing to run.
+NoteTaker updates itself when you start it. There is nothing to run. To
+update only when you choose, turn the check off in **Settings**.
 
 ```bash
 notes update              # update right now
@@ -540,8 +572,8 @@ reference: 89.1% for `small`, 90.8% for `large-v3-turbo`.
 
 The qwen3 family is reasoning-first. Even with `think=false` it spends its
 token budget on chain-of-thought instead of answering, so a **non-reasoning
-instruct model is the right choice here**. Change it with `--model` or
-`NOTETAKER_SUMMARY_MODEL`.
+instruct model is the right choice here**. Change it in **Settings**
+(*Advanced*), with `--model`, or with `NOTETAKER_SUMMARY_MODEL`.
 
 ### With an NVIDIA graphics card
 
@@ -551,7 +583,8 @@ also needs NVIDIA's maths libraries (about 1 GB). `notes check` shows a
 *graphics card* row when it finds a card, with the exact command to install
 them if they are missing. Before using the card NoteTaker does a one-second
 test run; if anything fails, it uses the processor as before, so the card can
-never stop a class being recorded. `NOTETAKER_DEVICE=cpu` turns it off.
+never stop a class being recorded. Turn it off in **Settings** (*Advanced*)
+or with `NOTETAKER_DEVICE=cpu`.
 Macs use the processor (faster-whisper has no Apple GPU support).
 
 ### Verified on a real recording

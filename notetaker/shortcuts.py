@@ -15,7 +15,8 @@ APP_DIR = Path(__file__).resolve().parent.parent
 
 
 def _class_minutes() -> str:
-    return os.environ.get("NOTES_CLASS_MINUTES") or "60"
+    # "usual" is the length chosen in Settings (60 unless changed there).
+    return os.environ.get("NOTES_CLASS_MINUTES") or "usual"
 
 
 VERBS: dict[str, list[str]] = {}
@@ -93,6 +94,10 @@ def translate(argv: list[str]) -> list[str] | None:
 def _auto_update(word: str) -> None:
     """Same promise as the bash launcher: never block opening the app."""
     if os.environ.get("NOTES_AUTO_UPDATE", "1") == "0" or word in ("update", "upgrade"):
+        return
+    from . import config
+
+    if not config.AUTO_UPDATE:  # turned off in Settings
         return
     try:
         status = subprocess.run(

@@ -87,13 +87,13 @@ case "${1-}" in
     # remember to press anything while packing up.
     class|period|lesson)
         shift
-        run record --source mic --live-notes --minutes "${NOTES_CLASS_MINUTES:-60}" "$@"
+        run record --source mic --live-notes --minutes "${NOTES_CLASS_MINUTES:-usual}" "$@"
         ;;
     # Record the sound only. No model runs during the lesson, so the laptop
     # stays cool and the battery lasts a whole day of classes.
     later|quick|save)
         shift
-        run record --source mic --later --minutes "${NOTES_CLASS_MINUTES:-60}" "$@"
+        run record --source mic --later --minutes "${NOTES_CLASS_MINUTES:-usual}" "$@"
         ;;
     catchup|writeup|finish|homework)
         shift
@@ -185,7 +185,8 @@ notes update     update NoteTaker safely from its Git repository
 notes lang       add or list note languages
 
 'notes class' stops on its own. Ctrl-C always stops sooner.
-Set a different class length with:  NOTES_CLASS_MINUTES=45 notes class
+Change the usual class length in the window's Settings, or for one class:
+  NOTES_CLASS_MINUTES=45 notes class
 
 Anything else is passed to the full CLI, for example:
   notes record --title "Physics week 4" --lang th
