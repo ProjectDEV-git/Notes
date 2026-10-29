@@ -13,6 +13,7 @@
 #   notes search X   find where X was said, across every class
 #   notes quiz       practise with questions from a class's notes
 #   notes check      confirm the microphone and notes writer work
+#   notes ui         open the NoteTaker window in the browser
 #   notes setup-online  guided one-time setup for recording online classes
 #   notes update     update NoteTaker safely from its Git repository
 #   notes <anything else>  passed straight through to the full CLI
@@ -158,6 +159,11 @@ case "${1-}" in
     menu)
         run menu
         ;;
+    # The same app as a window: buttons instead of numbers.
+    ui|app|window)
+        shift
+        run ui "$@"
+        ;;
     help|-h|--help)
         cat <<'EOF'
 notes            open the menu - pick what you want from a list
@@ -174,6 +180,7 @@ notes search X   find where X was said, in every class
 notes quiz       practise with questions from your last class's notes
 notes cleanup    free space: delete old recordings, keep the notes
 notes check      confirm the microphone and notes writer work
+notes ui         open the NoteTaker window in your browser
 notes update     update NoteTaker safely from its Git repository
 notes lang       add or list note languages
 

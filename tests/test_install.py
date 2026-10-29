@@ -543,7 +543,11 @@ def test_mac_puts_an_icon_on_the_desktop(sandbox):
     run_installer(sandbox, "--yes")
     icon = home / "Desktop" / "NoteTaker.command"
     assert icon.exists() and os.access(icon, os.X_OK)
-    assert "menu" in icon.read_text()
+    script = icon.read_text()
+    # It opens the window through the ordinary `notes` launcher, so typing
+    # `notes` (the menu) and every other command keep working unchanged.
+    assert script.rstrip().endswith('/notes" ui')
+    assert subprocess.run(["bash", "-n", str(icon)]).returncode == 0
 
 
 def test_mac_points_online_classes_at_the_guided_setup(sandbox):

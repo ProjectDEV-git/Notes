@@ -33,6 +33,7 @@ for _words, _argv in [
     (("check", "test", "doctor", "setup"), ["check", "--listen"]),
     (("update", "upgrade"), ["update"]),
     (("menu",), ["menu"]),
+    (("ui", "app", "window"), ["ui"]),
     (("video", "watch", "link", "file", "import"), ["video"]),
 ]:
     for _word in _words:
@@ -54,6 +55,7 @@ notes search X     find where X was said, in every class
 notes quiz         practise with questions from your last class's notes
 notes cleanup      free space: delete old recordings, keep the notes
 notes check        confirm the microphone and notes writer work
+notes ui           open the NoteTaker window in your browser
 notes update       update NoteTaker
 """
 

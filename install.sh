@@ -519,11 +519,12 @@ if (( IS_MAC )); then
     say "Turn on your terminal (Terminal or iTerm), then quit it with Cmd-Q and reopen."
 
     # A double-clickable icon, so the next time needs no terminal knowledge.
+    # It opens the NoteTaker window; the `notes` command is unchanged.
     if confirm "Put a NoteTaker icon on your Desktop?"; then
         desktop="$HOME/Desktop/NoteTaker.command"
-        printf '#!/bin/bash\n"%s" menu\n' "$BIN_DIR/notes" > "$desktop"
+        printf '#!/bin/bash\n"%s" ui\n' "$BIN_DIR/notes" > "$desktop"
         chmod +x "$desktop"
-        ok "double-click NoteTaker on your Desktop to start"
+        ok "double-click NoteTaker on your Desktop to open it"
     fi
 fi
 

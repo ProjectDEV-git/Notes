@@ -1,5 +1,10 @@
 # NoteTaker
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/window-dark.png">
+  <img alt="The NoteTaker window: classes listed by day on the left, the key ideas from a physics class on the right" src="docs/images/window-light.png">
+</picture>
+
 Records a class, transcribes it, and writes down **the key ideas only**.
 
 Built for a normal school day: a period has a known length, so recording
@@ -33,18 +38,75 @@ no audio ever leaves the laptop.
 
 You do not need to know Python or any command-line options:
 
-1. Install NoteTaker with the one-line installer below. It creates everything
-   in `~/NoteTaker`, including the `notes` command.
-2. Open a **new terminal**. (The installer prints the exact `source ...`
-   command for your shell if you would rather not.)
-3. Run `notes`, choose **9. Check that everything works**, and follow any
-   repair command it prints.
-4. Run `notes` again and choose **1** for an in-person class or **2** for an
-   online class. Press Enter at the questions to use the suggested defaults.
+1. Install NoteTaker with the [installer for your computer](#install). On a
+   Mac or Windows it puts a **NoteTaker** icon on your Desktop.
+2. Double-click the icon (on Linux, type `notes ui`). NoteTaker opens in your
+   web browser.
+3. Click **Check setup** at the bottom left and follow any fix it shows.
+4. Click **New notes**, pick the subject and how long the class is, and press
+   **Start recording**.
 
 The first recording downloads the speech model (about 500 MB), so allow a few
-minutes before the first class. Keep the terminal open while recording; press
-Ctrl-C when you want to stop early.
+minutes before the first class. A small terminal window opens alongside the
+browser: leave it open while NoteTaker is in use.
+
+Prefer typing? Everything works from the terminal too, exactly as before:
+see [From the terminal](#from-the-terminal).
+
+### The NoteTaker window
+
+Every class is listed by day on the left. The notes are on the right.
+
+**Start a class.** Choose *In class* (the microphone), *Online* (what the
+computer is playing: Zoom, Teams, YouTube) or *Video* (a link or a file).
+Recent subjects are one click away, and the class length decides when it
+stops by itself.
+
+![Starting a class: subject, length, and Start recording](docs/images/new-notes.png)
+
+**While it records** you see how long it has been going, how long is left,
+and the last few things it heard, so you know the microphone is working
+without looking at a single setting. **Stop recording** finishes the same
+careful way as Ctrl-C: the end of the class is transcribed and the notes are
+still written.
+
+![Recording: a large timer, time left, and the last lines heard](docs/images/recording.png)
+
+**Reading notes.** Switch between the notes and the full transcript, copy the
+notes, download them as a file, or have them written again. Notes from a video
+show when each point was said; click the time to replay that moment.
+
+![Notes from a video, each point linked to the moment it was said](docs/images/video-notes.png)
+
+A class that still needs notes has a dot next to it, and **Write up** at the
+top of the list writes every waiting class in one go.
+
+![A class recorded for later, ready to be written up](docs/images/waiting.png)
+
+The window fits a narrow screen and follows your computer's dark mode.
+
+![The list, a recording and dark-mode notes in a narrow window](docs/images/phone.png)
+
+#### Good to know
+
+- **It is the same app underneath.** Every button runs the command you would
+  type, and the window shows that command when it finishes, so you can learn
+  the shortcuts as you go.
+- **Nothing leaves the computer.** The window only listens on this computer
+  (`127.0.0.1`), needs no internet, and other web pages cannot use it.
+- **Closing it is safe.** Press Ctrl-C in the terminal window to close
+  NoteTaker; a class that is still recording is stopped and saved first.
+  Closing that window by accident is safe too: the recording notices within
+  half a minute, stops, saves, and writes its notes.
+- **Open it without the icon** with `notes ui`, or **12** in the menu.
+
+### From the terminal
+
+First time? Run `notes`, choose **9. Check that everything works**, and
+follow any repair command it prints. Then run `notes` again and
+choose **1** for an in-person class or **2** for an online class. Press Enter
+at the questions to use the suggested defaults. Keep the terminal open while
+recording; press Ctrl-C when you want to stop early.
 
 After setup, one word opens a list. Nothing to remember:
 
@@ -64,6 +126,7 @@ notes            # opens a menu: pick a number, press Enter
   9. Check that everything works — microphone, notes writer
   10. Make notes from a video — YouTube link or a video file
   11. Practise for a test — questions from your notes
+  12. Open the NoteTaker window — buttons instead of numbers
 ```
 
 It asks which subject, and how long the class is. Enter is a valid answer to
@@ -82,6 +145,7 @@ notes search X   # find where X was said, in every class (with video links)
 notes quiz       # practise with questions from your last class's notes
 notes cleanup    # free space: delete old recordings, keep the notes
 notes check      # confirm your microphone and notes writer work
+notes ui         # open the NoteTaker window in your browser
 notes update     # update NoteTaker and Python dependencies safely
 ```
 
@@ -116,6 +180,9 @@ here rather than lost: a transcript that was cut short is redone from the full
 recording, so you get the whole class and not just the start. The menu tells
 you when classes are waiting.
 
+In the window, turn on **Write the notes later** before you start recording,
+then press **Write up** at the top of the class list when you get home.
+
 ### Videos and YouTube
 
 Missed the class, or the teacher posted it online? Paste the link:
@@ -125,8 +192,10 @@ notes https://www.youtube.com/watch?v=...     # a link is enough
 notes video ~/Downloads/week4-physics.mp4     # or a file you already have
 ```
 
-Or pick **10. Make notes from a video** in the menu, paste the link (or drag
-the file into the window), and press Enter.
+In the window, choose **New notes**, then **Video**, paste the link (or the
+file's full path) and press **Make notes**. In the menu, it is **10. Make notes
+from a video**: paste the link (or drag the file into the terminal) and press
+Enter.
 
 - **Most video sites work**, not just YouTube: Vimeo, Facebook, school
   platforms, and over a thousand others, via
@@ -185,6 +254,7 @@ notes summarize physics --rerun --level university   # denser wording
 ```bash
 notetaker devices                      # which mic / system-audio sources exist
 notetaker menu                         # the numbered menu
+notetaker ui [--port N] [--no-browser] # the same app as a window in your browser
 notetaker check                        # verify audio devices and Ollama
 notetaker update                       # update code and Python dependencies
 notetaker record [--source mic|system] [--title T] [--live-notes] [--lang auto|en|th]
@@ -292,7 +362,9 @@ unzip it, and double-click the installer for your computer:
 
 It explains each helper app it needs in plain words, asks once, installs them
 all, and puts a **NoteTaker** icon on your Desktop. After that you never need
-the terminal: double-click the icon and pick a number.
+the terminal: double-click the icon and the NoteTaker window opens in your
+browser. Typing still works too: `notes` opens the numbered menu, and every
+command below is unchanged.
 
 On Windows you can also paste one line into PowerShell:
 
